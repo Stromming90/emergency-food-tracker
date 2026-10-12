@@ -36,8 +36,8 @@ services:
     ports:
       - "4500:8000"          # host:container
     volumes:
-      - /mnt/apps-mirror/apps-data/emergency-food-tracker/config:/config
-      - /mnt/apps-mirror/apps-data/emergency-food-tracker/data:/data
+      - /mnt/apps/emergency-food-tracker/config:/config
+      - /mnt/apps/emergency-food-tracker/data:/data
 ```
 
 `docker compose up -d`, then open `http://<host>:4500`.
