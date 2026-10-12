@@ -18,8 +18,8 @@ Environment:
   DATA_DIR=...   data root (default: ./data — same as the web app)
   HOUSEHOLD=...  household name (default: default)
 
-All data lives in CSV files next to this script (products.csv, inventory.csv),
-so the whole folder is your git repo — commit it to keep history.
+All data lives in CSV files: one global products.csv at the data root
+(shared by all households) and one inventory.csv per household.
 """
 
 import argparse
@@ -36,7 +36,8 @@ BASE_DIR = os.environ.get(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
 HOUSEHOLD = os.environ.get("HOUSEHOLD", "default")
 DATA_DIR = os.path.join(BASE_DIR, "households", HOUSEHOLD)
-PRODUCTS_CSV = os.path.join(DATA_DIR, "products.csv")
+# v2.1: the product list is GLOBAL — shared by all households.
+PRODUCTS_CSV = os.path.join(BASE_DIR, "products.csv")
 INVENTORY_CSV = os.path.join(DATA_DIR, "inventory.csv")
 
 ALERT_WINDOWS_DAYS = {"6 months": 180, "3 months": 90, "1 month": 30}
@@ -46,14 +47,42 @@ INVENTORY_HEADER = ["id", "product", "manufacturer", "best_before", "quantity", 
 
 # ---------- storage helpers ----------
 def migrate_old_layout():
-    """Move data/products.csv & inventory.csv from the flat layout into
-    households/<default>/ the first time the new version runs."""
-    for fname in ("products.csv", "inventory.csv"):
-        old = os.path.join(BASE_DIR, fname)
-        new = os.path.join(DATA_DIR, fname)
-        if os.path.exists(old) and not os.path.exists(new):
-            ensure_files()
-            os.replace(old, new)
+    """Move data from older layouts into the v2.1 layout:
+    - flat data/products.csv -> data/products.csv (global)
+    - flat data/inventory.csv -> data/households/default/inventory.csv
+    - v2.0 per-household products.csv -> merged into the global list
+    """
+    old_inv = os.path.join(BASE_DIR, "inventory.csv")
+    if os.path.exists(old_inv) and not os.path.exists(INVENTORY_CSV):
+        ensure_files()
+        os.replace(old_inv, INVENTORY_CSV)
+    ensure_files()
+    if not os.path.exists(PRODUCTS_CSV):
+        os.makedirs(os.path.dirname(PRODUCTS_CSV), exist_ok=True)
+        with open(PRODUCTS_CSV, "w", newline="", encoding="utf-8") as f:
+            csv.writer(f).writerow(PRODUCTS_HEADER)
+    # merge any per-household product lists into the global list (v2.0 -> v2.1)
+    households_root = os.path.join(BASE_DIR, "households")
+    if os.path.isdir(households_root):
+        global_products = read_csv(PRODUCTS_CSV)
+        existing = {(p["name"].lower(), p.get("manufacturer", "").lower())
+                    for p in global_products}
+        for hh in sorted(os.listdir(households_root)):
+            old = os.path.join(households_root, hh, "products.csv")
+            if not os.path.exists(old):
+                continue
+            for p in read_csv(old):
+                key = (p["name"].lower(), p.get("manufacturer", "").lower())
+                if key not in existing:
+                    global_products.append(p)
+                    existing.add(key)
+        if global_products:
+            global_products.sort(key=lambda p: p["name"].lower())
+            write_csv(PRODUCTS_CSV, PRODUCTS_HEADER, global_products)
+        for hh in os.listdir(households_root):
+            old = os.path.join(households_root, hh, "products.csv")
+            if os.path.exists(old):
+                os.remove(old)
 
 
 def ensure_files():

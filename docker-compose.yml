@@ -7,7 +7,9 @@ services:
     container_name: food-tracker
     restart: unless-stopped
     ports:
-      - "4500:8000"
+      - "4500:4500"
+    environment:
+      - PORT=4500
     volumes:
       - /mnt/apps/emergency-food-tracker/config:/config
       - /mnt/apps/emergency-food-tracker/data:/data

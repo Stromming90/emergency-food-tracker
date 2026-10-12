@@ -73,17 +73,31 @@
   .auth button { width: 100%; margin-top: 10px; }
   .divider { text-align: center; color: var(--muted); font-size: .8rem; margin: 14px 0 6px; }
 
-  /* admin modal */
+  /* settings modal */
   .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex;
               align-items: center; justify-content: center; padding: 16px; z-index: 50; }
   .modal { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
-           padding: 20px; max-width: 720px; width: 100%; max-height: 85vh; overflow-y: auto; }
+           padding: 20px; max-width: 760px; width: 100%; max-height: 85vh; overflow-y: auto; }
   .modal h2 { margin-top: 0; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
   .muted { color: var(--muted); font-size: .82rem; }
   code { background: var(--border); padding: 1px 6px; border-radius: 6px;
          font-size: .8rem; word-break: break-all; }
   [hidden] { display: none !important; }
+
+  /* settings tabs */
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border);
+          margin-bottom: 14px; flex-wrap: wrap; }
+  .tabs button { background: transparent; color: var(--muted); border: none;
+                 border-bottom: 2px solid transparent; border-radius: 0;
+                 padding: 8px 14px; }
+  .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tabpane { margin-top: 10px; }
+  .checkbox-list { display: flex; gap: 10px 18px; flex-wrap: wrap; margin: 8px 0; }
+  .checkbox-list label { display: inline-flex; gap: 6px; align-items: center;
+                          font-size: .9rem; }
+  .pill { display: inline-block; background: var(--border); border-radius: 999px;
+          padding: 2px 10px; font-size: .78rem; margin: 2px 4px 2px 0; }
 </style>
 </head>
 <body>
@@ -121,7 +135,7 @@
     <h1 style="font-size:1.2rem;margin:0">🥫 Emergency Food Storage</h1>
     <select id="household" title="Household"></select>
     <span class="spacer"></span>
-    <button class="iconbtn" id="b-admin" title="Admin" hidden>⚙️</button>
+    <button class="iconbtn" id="b-admin" title="Settings" hidden>⚙️</button>
     <button class="iconbtn" id="b-theme" title="Theme: light / dark / auto">🌙</button>
     <button class="iconbtn" id="b-logout" title="Log out">⏻</button>
   </div>
@@ -129,7 +143,7 @@
 
   <div class="grid">
     <div class="card">
-      <h2>Add product to list</h2>
+      <h2>Add product to list <span class="muted" style="font-weight:400;font-size:.78rem">(global — shared by all households)</span></h2>
       <form id="f-product">
         <input id="p-name" placeholder="Product name" required>
         <input id="p-man" placeholder="Manufacturer (optional)">
@@ -156,9 +170,9 @@
       <div class="msg" id="msg-buy"></div>
       <h2 style="margin-top:18px">Inventory</h2>
       <div class="legend">
-        <span class="badge lvl-6months">&lt; 6 months</span>
-        <span class="badge lvl-3months">&lt; 3 months</span>
-        <span class="badge lvl-1month">&lt; 1 month</span>
+        <span class="badge lvl-6months">Less than 6 months</span>
+        <span class="badge lvl-3months">Less than 3 months</span>
+        <span class="badge lvl-1month">Less than 1 month</span>
         <span class="badge lvl-expired">expired</span>
       </div>
       <div class="scroll">
@@ -171,47 +185,104 @@
   </div>
 </div>
 
-<!-- admin modal -->
+<!-- settings modal -->
 <div class="modal-bg" id="admin-modal" hidden>
   <div class="modal">
     <div class="row" style="justify-content:space-between">
-      <h2>Admin</h2>
+      <h2>⚙️ Settings</h2>
       <button class="del" id="admin-close" title="Close">✕</button>
     </div>
 
-    <h3>Users</h3>
-    <table id="t-users"><thead>
-      <tr><th>User</th><th>Admin</th><th>Households</th><th></th></tr></thead><tbody></tbody></table>
-    <div class="row" style="margin-top:10px">
-      <input id="nu-user" placeholder="New username" style="max-width:160px">
-      <input id="nu-pass" type="password" placeholder="Password" style="max-width:140px">
-      <label class="muted"><input type="checkbox" id="nu-admin"> admin</label>
-      <input id="nu-households" placeholder="households (comma-sep)" style="max-width:200px">
-      <button id="nu-add" class="ghost">Create user</button>
+    <div class="tabs" id="settings-tabs">
+      <button data-tab="users">Users</button>
+      <button data-tab="households">Households</button>
+      <button data-tab="auth">Authentication</button>
+      <button data-tab="apikey">API key</button>
     </div>
-    <div class="msg" id="msg-admin-users"></div>
 
-    <h3>Households</h3>
-    <div id="hh-list" class="muted"></div>
-    <div class="row">
-      <input id="hh-new" placeholder="New household name" style="max-width:220px">
-      <button id="hh-add" class="ghost">Create household</button>
+    <!-- ============ Users tab ============ -->
+    <div class="tabpane" data-pane="users">
+      <table id="t-users"><thead>
+        <tr><th>User</th><th>Admin</th><th>Households</th><th></th></tr></thead><tbody></tbody></table>
+
+      <h3 style="margin:18px 0 6px">Create user</h3>
+      <div class="row">
+        <input id="nu-user" placeholder="Username" style="max-width:160px">
+        <input id="nu-pass" type="password" placeholder="Password" style="max-width:150px">
+        <label class="muted"><input type="checkbox" id="nu-admin"> admin</label>
+      </div>
+      <div class="muted">Households for the new user:</div>
+      <div class="checkbox-list" id="nu-households"></div>
+      <div class="row"><button id="nu-add" class="ghost">Create user</button></div>
+      <div class="msg" id="msg-admin-users"></div>
     </div>
-    <div class="msg" id="msg-admin-hh"></div>
 
-    <h3>OIDC / SSO (Keycloak etc.)</h3>
-    <div class="row"><input id="o-issuer" placeholder="Issuer URL, e.g. https://keycloak/realms/myrealm" style="min-width:260px"></div>
-    <div class="row"><input id="o-client" placeholder="Client ID" style="min-width:180px">
-      <input id="o-secret" type="password" placeholder="Client secret" style="min-width:180px"></div>
-    <div class="row"><input id="o-redirect" placeholder="Redirect URI (optional, auto if blank)" style="min-width:260px"></div>
-    <div class="row"><input id="o-admins" placeholder="Admin emails (comma-sep)" style="min-width:260px"></div>
-    <label class="muted"><input type="checkbox" id="o-auto" checked> auto-create unknown users on first SSO login</label>
-    <div class="row"><button id="o-save">Save OIDC settings</button></div>
-    <div class="msg" id="msg-admin-oidc"></div>
+    <!-- ============ Households tab ============ -->
+    <div class="tabpane" data-pane="households" hidden>
+      <h3 style="margin:0 0 6px">Your households</h3>
+      <div id="hh-list"></div>
 
-    <h3>Homepage widget</h3>
-    <p class="muted">Use this key in your gethomepage widget config:</p>
-    <code id="apikey">…</code>
+      <h3 style="margin:18px 0 6px">Create household</h3>
+      <div class="row">
+        <input id="hh-new" placeholder="New household name" style="max-width:220px">
+        <button id="hh-add" class="ghost">Create</button>
+      </div>
+      <div class="muted">Assign existing users to the new household:</div>
+      <div class="checkbox-list" id="hh-users"></div>
+      <div class="msg" id="msg-admin-hh"></div>
+
+      <h3 style="margin:18px 0 6px">Delete household</h3>
+      <div class="row">
+        <select id="hh-del" style="max-width:220px"></select>
+        <button id="hh-del-btn" class="ghost">Delete</button>
+      </div>
+      <p class="muted">Deleting a household removes its inventory and unassigns it from users. Users are never deleted.</p>
+      <div class="msg" id="msg-admin-hh-del"></div>
+
+      <h3 style="margin:18px 0 6px">Migrate inventory</h3>
+      <p class="muted" style="margin:4px 0">Move all inventory from one household to another — useful when reorganising or creating a new household.</p>
+      <div class="row">
+        <label class="muted">From <select id="mig-from"></select></label>
+        <label class="muted">To <select id="mig-to"></select></label>
+        <button id="mig-go" class="ghost">Move all items</button>
+      </div>
+      <div class="msg" id="msg-admin-migrate"></div>
+    </div>
+
+    <!-- ============ Authentication tab ============ -->
+    <div class="tabpane" data-pane="auth" hidden>
+      <h3 style="margin:0 0 6px">OIDC / SSO (Keycloak etc.)</h3>
+      <div class="row"><input id="o-issuer" placeholder="Issuer URL, e.g. https://keycloak/realms/myrealm" style="min-width:260px"></div>
+      <div class="row"><input id="o-client" placeholder="Client ID" style="min-width:180px">
+        <input id="o-secret" type="password" placeholder="Client secret" style="min-width:180px"></div>
+      <div class="row"><input id="o-redirect" placeholder="Redirect URI (optional, auto if blank)" style="min-width:260px"></div>
+      <div class="row"><input id="o-admins" placeholder="Admin emails (comma-sep)" style="min-width:260px"></div>
+      <label class="muted"><input type="checkbox" id="o-auto" checked> auto-create unknown users on first SSO login</label>
+      <div class="row"><button id="o-save">Save OIDC settings</button></div>
+      <div class="msg" id="msg-admin-oidc"></div>
+    </div>
+
+    <!-- ============ API key tab ============ -->
+    <div class="tabpane" data-pane="apikey" hidden>
+      <h3 style="margin:0 0 6px">Homepage widget</h3>
+      <p class="muted">Use this key in your gethomepage widget config. The widget URL accepts
+      <code>household=default</code>, a comma-separated list, or <code>household=all</code>.</p>
+      <code id="apikey">…</code>
+    </div>
+  </div>
+</div>
+
+<!-- edit households modal (nested) -->
+<div class="modal-bg" id="hh-modal" hidden>
+  <div class="modal" style="max-width:420px">
+    <div class="row" style="justify-content:space-between">
+      <h2 id="eh-title">Edit households</h2>
+      <button class="del" id="eh-close" title="Close">✕</button>
+    </div>
+    <p class="muted">Tick the households this user belongs to.</p>
+    <div class="checkbox-list" id="eh-list"></div>
+    <div class="row"><button id="eh-save">Save</button></div>
+    <div class="msg" id="msg-eh"></div>
   </div>
 </div>
 
@@ -240,6 +311,7 @@ applyTheme();
 
 // ---------- state ----------
 let BOOT = null, USER = null, DATA = null, HH = 'default';
+let ADMIN = { users: [], households: [] };
 
 async function api(method, url, body) {
   const r = await fetch(url, { method,
@@ -329,8 +401,12 @@ function render() {
   tb.innerHTML = DATA.products.map(p =>
     `<tr><td>${esc(p.name)}</td><td>${esc(p.manufacturer || '—')}</td>
      <td>${esc(p.category || '—')}</td>
-     <td><button class="del" title="Remove product"
-       onclick="delProduct('${esc(p.name)}','${esc(p.manufacturer || '')}')">✕</button></td></tr>`).join('');
+     <td>
+       ${USER.is_admin ? `<button class="del" title="Edit product (admin)"
+         onclick="editProduct('${esc(p.name)}','${esc(p.manufacturer || '')}','${esc(p.category || '')}')">✎</button>` : ''}
+       <button class="del" title="Remove product"
+         onclick="delProduct('${esc(p.name)}','${esc(p.manufacturer || '')}')">✕</button>
+     </td></tr>`).join('');
   $('empty-products').hidden = DATA.products.length > 0;
 
   const ti = $('t-inventory').querySelector('tbody');
@@ -354,16 +430,33 @@ window.delItem = async id => {
   if (j.error) alert(j.error); load();
 };
 window.delProduct = async (name, manufacturer) => {
+  if (!confirm(`Remove product "${name}" from the global product list?` +
+      ` Existing inventory items are kept.`)) return;
   const j = await api('DELETE', '/api/products/' + encodeURIComponent(name) +
-      `?household=${encodeURIComponent(HH)}&manufacturer=${encodeURIComponent(manufacturer)}`);
+      `?manufacturer=${encodeURIComponent(manufacturer)}`);
   if (j.error) alert(j.error); load();
+};
+
+// admin product edit (PUT /api/products)
+window.editProduct = async (name, manufacturer, category) => {
+  const nn = prompt('Product name:', name);
+  if (nn === null) return;
+  const nm = prompt('Manufacturer:', manufacturer);
+  if (nm === null) return;
+  const nc = prompt('Category:', category);
+  if (nc === null) return;
+  const j = await api('PUT', '/api/products', {
+    old_name: name, old_manufacturer: manufacturer,
+    name: nn, manufacturer: nm, category: nc });
+  if (j.error) alert(j.error);
+  load();
 };
 
 $('household').addEventListener('change', () => { HH = $('household').value; load(); });
 
 $('f-product').addEventListener('submit', async e => {
   e.preventDefault();
-  const j = await api('POST', '/api/products', { household: HH,
+  const j = await api('POST', '/api/products', {
     name: $('p-name').value, manufacturer: $('p-man').value, category: $('p-cat').value });
   msg('msg-product', j.error || 'Saved ✓', !j.error);
   if (!j.error) { $('p-name').value = ''; $('p-man').value = ''; $('p-cat').value = ''; load(); }
@@ -379,34 +472,84 @@ $('f-buy').addEventListener('submit', async e => {
   if (!j.error) load();
 });
 
-// ---------- admin ----------
+// ---------- settings modal ----------
 $('b-admin').addEventListener('click', openAdmin);
 $('admin-close').addEventListener('click', () => $('admin-modal').hidden = true);
 
-async function openAdmin() {
+$('settings-tabs').addEventListener('click', e => {
+  if (e.target.tagName !== 'BUTTON') return;
+  document.querySelectorAll('#settings-tabs button').forEach(b =>
+    b.classList.toggle('active', b === e.target));
+  document.querySelectorAll('.tabpane').forEach(p =>
+    p.hidden = p.dataset.pane !== e.target.dataset.tab);
+});
+function showTab(name) {
+  document.querySelector(`#settings-tabs button[data-tab="${name}"]`).click();
+}
+
+function fillCheckboxes(id, options, checkedList) {
+  const el = $(id);
+  el.innerHTML = options.map(o =>
+    `<label><input type="checkbox" value="${esc(o)}" ` +
+    (checkedList.includes(o) ? 'checked' : '') + `> ${esc(o)}</label>`).join('') ||
+    '<span class="muted">(none yet)</span>';
+}
+function checkedOf(id) {
+  return [...$(id).querySelectorAll('input:checked')].map(i => i.value);
+}
+function fillSelect(id, options, exclude) {
+  $(id).innerHTML = options.filter(h => h !== exclude)
+    .map(h => `<option value="${esc(h)}">${esc(h)}</option>`).join('');
+}
+
+async function openAdmin(keepTab) {
   $('admin-modal').hidden = false;
   const [u, h, c] = await Promise.all([
     api('GET', '/api/admin/users'),
     api('GET', '/api/admin/households'),
     api('GET', '/api/admin/config')]);
   if (u.error || h.error || c.error) { alert(u.error || h.error || c.error); return; }
+  ADMIN = { users: u.users, households: h.households, config: c };
+  renderUsers(u.users);
+  renderHouseholds(h.households, u.users);
+  renderAuth(c);
+  showTab(keepTab || 'users');
+}
 
-  $('t-users').querySelector('tbody').innerHTML = u.users.map(x =>
+function renderUsers(users) {
+  $('t-users').querySelector('tbody').innerHTML = users.map(x =>
     `<tr><td>${esc(x.username)}${x.oidc ? ' <span class="muted">(SSO)</span>' : ''}</td>
      <td>${x.is_admin ? '✓' : ''}</td>
-     <td>${esc((x.households || []).join(', '))}</td>
+     <td>${(x.households || []).map(hh => `<span class="pill">${esc(hh)}</span>`).join('')}</td>
      <td>
        <button class="del" title="Toggle admin"
          onclick="toggleAdmin('${esc(x.username)}',${!x.is_admin})">⭐</button>
        <button class="del" title="Edit households"
-         onclick="editHouseholds('${esc(x.username)}','${esc((x.households||[]).join(','))}')">🏠</button>
+         onclick="editUserHouseholds('${esc(x.username)}')">🏠</button>
        <button class="del" title="Delete user"
          onclick="delUser('${esc(x.username)}')">✕</button>
      </td></tr>`).join('');
+  fillCheckboxes('nu-households', ADMIN.households, ['default']);
+}
 
-  $('hh-list').textContent = 'Existing: ' + h.households.join(', ');
+function renderHouseholds(households, users) {
+  $('hh-list').innerHTML = households.map(hh => {
+    const members = users.filter(u => (u.households || []).includes(hh))
+      .map(u => esc(u.username)).join(', ') || '<span class="muted">no users</span>';
+    return `<div class="row"><span class="pill" style="font-size:.85rem">${esc(hh)}</span>
+      <span class="muted">${members}</span></div>`;
+  }).join('');
+
+  fillCheckboxes('hh-users', users.map(u => u.username), []);
+  fillSelect('hh-del', households, null);
+  fillSelect('mig-from', households, null);
+  fillSelect('mig-to', households, null);
+  $('mig-to').value = households[0] || '';
+  $('mig-from').value = households[1] || households[0] || '';
+}
+
+function renderAuth(c) {
   $('apikey').textContent = c.api_key;
-
   const o = c.oidc;
   $('o-issuer').value = o.issuer || '';
   $('o-client').value = o.client_id || '';
@@ -416,39 +559,69 @@ async function openAdmin() {
   $('o-auto').checked = c.oidc_auto_create;
 }
 
+// ---- users tab actions ----
 window.toggleAdmin = async (username, make) => {
   const j = await api('PUT', '/api/admin/users', { username, is_admin: make });
-  if (j.error) alert(j.error); openAdmin();
+  if (j.error) alert(j.error); openAdmin('users');
 };
-window.editHouseholds = async (username, current) => {
-  const v = prompt(`Households for ${username} (comma-separated):`, current);
-  if (v === null) return;
-  const j = await api('PUT', '/api/admin/users',
-    { username, households: v.split(',').map(s => s.trim()).filter(Boolean) });
-  if (j.error) alert(j.error); openAdmin();
+window.editUserHouseholds = async username => {
+  const u = ADMIN.users.find(x => x.username === username);
+  $('eh-title').textContent = 'Households for ' + username;
+  fillCheckboxes('eh-list', ADMIN.households, u.households || []);
+  $('eh-save').onclick = async () => {
+    const j = await api('PUT', '/api/admin/users', {
+      username, households: checkedOf('eh-list') });
+    if (j.error) return msg('msg-eh', j.error, false);
+    $('hh-modal').hidden = true;
+    openAdmin('users');
+  };
+  $('hh-modal').hidden = false;
 };
+$('eh-close').addEventListener('click', () => $('hh-modal').hidden = true);
 window.delUser = async username => {
   if (!confirm(`Delete user ${username}?`)) return;
   const j = await api('DELETE', '/api/admin/users/' + encodeURIComponent(username));
-  if (j.error) alert(j.error); openAdmin();
+  if (j.error) alert(j.error); openAdmin('users');
 };
 
 $('nu-add').addEventListener('click', async () => {
   const j = await api('POST', '/api/admin/users', {
     username: $('nu-user').value, password: $('nu-pass').value,
     is_admin: $('nu-admin').checked,
-    households: $('nu-households').value.split(',').map(s => s.trim()).filter(Boolean) });
+    households: checkedOf('nu-households') });
   msg('msg-admin-users', j.error || 'User created ✓', !j.error);
-  if (!j.error) { $('nu-user').value = ''; $('nu-pass').value = ''; $('nu-households').value = ''; openAdmin(); }
+  if (!j.error) { $('nu-user').value = ''; $('nu-pass').value = ''; openAdmin('users'); }
 });
 
+// ---- households tab actions ----
 $('hh-add').addEventListener('click', async () => {
-  const j = await api('POST', '/api/admin/households', { name: $('hh-new').value });
+  const j = await api('POST', '/api/admin/households',
+    { name: $('hh-new').value, users: checkedOf('hh-users') });
   msg('msg-admin-hh', j.error || `Household '${j.household}' created ✓`, !j.error);
   if (!j.error) $('hh-new').value = '';
-  openAdmin();
+  openAdmin('households');
 });
 
+$('hh-del-btn').addEventListener('click', async () => {
+  const hh = $('hh-del').value;
+  if (!hh) return;
+  if (!confirm(`Delete household '${hh}' and ALL its inventory? This cannot be undone.`)) return;
+  const j = await api('DELETE', '/api/admin/households/' + encodeURIComponent(hh));
+  msg('msg-admin-hh-del', j.error || `Household '${hh}' deleted ✓`, !j.error);
+  openAdmin('households');
+});
+
+$('mig-go').addEventListener('click', async () => {
+  const from = $('mig-from').value, to = $('mig-to').value;
+  if (!from || !to) return msg('msg-admin-migrate', 'Pick source and target households.', false);
+  if (from === to) return msg('msg-admin-migrate', 'Source and target must differ.', false);
+  if (!confirm(`Move ALL inventory items from '${from}' to '${to}'?`)) return;
+  const j = await api('POST', '/api/admin/migrate', { from, to });
+  msg('msg-admin-migrate', j.error || `Moved ${j.moved} item(s) from '${from}' to '${to}' ✓`, !j.error);
+  if (!j.error) openAdmin('households');
+});
+
+// ---- auth tab ----
 $('o-save').addEventListener('click', async () => {
   const j = await api('POST', '/api/admin/oidc', {
     issuer: $('o-issuer').value, client_id: $('o-client').value,
@@ -456,7 +629,7 @@ $('o-save').addEventListener('click', async () => {
     admin_emails: $('o-admins').value.split(',').map(s => s.trim()).filter(Boolean),
     auto_create: $('o-auto').checked });
   msg('msg-admin-oidc', j.error || (j.oidc_enabled ? 'OIDC enabled ✓' : 'Saved (OIDC not active until issuer+client id set)'), !j.error);
-  boot();
+  if (!j.error) boot();
 });
 
 boot();

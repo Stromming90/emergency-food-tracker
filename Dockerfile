@@ -8,7 +8,7 @@ COPY static/ ./static/
 # /data   -> household CSVs (products, inventory)
 # /config -> users.json, config.json (api key, OIDC settings)
 RUN mkdir -p /data /config
-ENV DATA_DIR=/data CONFIG_DIR=/config PORT=8000
+ENV DATA_DIR=/data CONFIG_DIR=/config PORT=4500
 
-EXPOSE 8000
+EXPOSE 4500
 CMD ["python", "server.py"]
