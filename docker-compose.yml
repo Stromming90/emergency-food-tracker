@@ -1,0 +1,10 @@
+services:
+  food-tracker:
+    build: .
+    container_name: food-tracker
+    restart: unless-stopped
+    ports:
+      - "4500:4500"
+    volumes:
+      # Point this at a persistent dataset on TrueNAS
+      - ./data:/data
