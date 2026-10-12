@@ -119,6 +119,21 @@
           padding: 2px 10px; font-size: .78rem; margin: 2px 4px 2px 0; }
   .form-col { display: flex; flex-direction: column; gap: 8px; }
   .form-col label { font-size: .82rem; color: var(--muted); }
+
+  /* v2.3: category setup (products tab) */
+  .cat-info { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 10px; font-size: .82rem; }
+  .cat-info .pill { background: var(--accent); color: #fff; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { background: transparent; border: 1px solid var(--border); color: var(--text);
+          border-radius: 999px; padding: 4px 12px; font-size: .82rem; cursor: pointer; }
+  .chip:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .chip.added { background: transparent; color: var(--muted); cursor: default;
+                border-style: dashed; }
+  .chip.added:hover { background: transparent; color: var(--muted); border-color: var(--border); }
+  .chip.added::after { content: ' ✓'; }
+
+  /* inventory quantity inline edit */
+  .qty-input { width: 64px; padding: 3px 6px; font-size: .85rem; }
 </style>
 </head>
 <body>
@@ -173,6 +188,8 @@
     <div class="card">
       <h2>Record a purchase</h2>
       <form id="f-buy">
+        <select id="b-cat" style="flex:1;min-width:160px"
+                title="Filter products by category"></select>
         <select id="b-product" required style="flex:2;min-width:180px"></select>
         <input id="b-date" type="date" required title="Best before date">
         <input id="b-qty" type="number" min="1" value="1" style="flex:0;width:70px" title="Quantity">
@@ -220,12 +237,24 @@
   <!-- ============ Products tab ============ -->
   <div data-pane="products" hidden>
     <div class="card">
-      <h2>Add product to the global list
+      <h2>Set up your product list
         <span class="muted" style="font-weight:400;font-size:.78rem">(shared by all households)</span></h2>
+      <p class="muted" style="margin:0 0 10px">Pick an emergency-food category, then click
+      suggested items to add them to the global product list.</p>
+      <div class="row">
+        <select id="setup-cat" style="min-width:240px"></select>
+      </div>
+      <div class="cat-info" id="setup-info"></div>
+      <div class="chips" id="setup-chips"></div>
+      <div class="msg" id="msg-setup"></div>
+    </div>
+
+    <div class="card">
+      <h2>Add a product manually</h2>
       <form id="f-product">
         <input id="p-name" placeholder="Product name" required>
         <input id="p-man" placeholder="Manufacturer (optional)">
-        <input id="p-cat" placeholder="Category (optional)">
+        <select id="p-cat" style="min-width:180px"></select>
         <button type="submit">Add</button>
       </form>
       <div class="msg" id="msg-product"></div>
@@ -367,7 +396,7 @@
       <label for="pe-man">Manufacturer</label>
       <input id="pe-man">
       <label for="pe-cat">Category</label>
-      <input id="pe-cat">
+      <select id="pe-cat"></select>
     </div>
     <div class="row" style="margin-top:12px">
       <button id="pe-save">Save changes</button>
@@ -407,6 +436,8 @@ let ADMIN = { users: [], households: [] };
 // inventory view state: filter text, level filter, sort key + direction
 let invFilter = '', invLevel = '', invSort = { key: 'days_left', dir: 1 };
 let prodFilter = '', prodSort = { key: 'name', dir: 1 };
+// v2.3: purchase category filter + products setup category
+let buyCat = '', setupCat = '';
 
 async function api(method, url, body) {
   const r = await fetch(url, { method,
@@ -421,6 +452,24 @@ function msg(id, text, ok) {
   $(id).textContent = text || '';
   $(id).className = 'msg ' + (ok ? 'ok' : 'error');
 }
+
+// ---------- categories (v2.3) ----------
+function cats() { return (DATA && DATA.categories) || []; }
+function catById(id) { return cats().find(c => c.id === id); }
+function catLabel(id) {
+  const c = catById(id);
+  return c ? c.label : (id || '');
+}
+function catOptions(sel, current) {
+  // options for a category select; keeps an unknown legacy value selectable
+  let html = cats().map(c =>
+    `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join('');
+  if (current && !catById(current))
+    html += `<option value="${esc(current)}">${esc(current)}</option>`;
+  sel.innerHTML = html;
+  if (current) sel.value = current;
+}
+const STORAGE_LABEL = { pantry: 'pantry', cool_dry: 'cool & dry', refrigerated: 'refrigerated' };
 
 // ---------- auth screens ----------
 function showAuth() {
@@ -502,14 +551,47 @@ function render() {
   $('today').textContent = 'Today: ' + DATA.today + ' — ' + HH +
       ' — ' + totalQty + ' item(s) in stock, ' + DATA.inventory.length + ' entr(ies)';
 
-  // purchase select
-  $('b-product').innerHTML = DATA.products.map(p =>
-    `<option value="${esc(p.name)}\u0001${esc(p.manufacturer || '')}">` +
-    esc(p.name + (p.manufacturer ? ' — ' + p.manufacturer : '')) + `</option>`).join('');
+  // purchase category filter
+  const bc = $('b-cat');
+  const curBuy = buyCat;
+  bc.innerHTML = '<option value="">All categories</option>' +
+    cats().map(c => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join('');
+  buyCat = cats().some(c => c.id === curBuy) ? curBuy : '';
+  bc.value = buyCat;
+  renderBuyProducts();
 
   renderInventory();
+  renderSetup();
   renderProducts();
 }
+
+// ---------- purchase form (household tab) ----------
+function productCat(p) { return p.category || ''; }
+
+function renderBuyProducts() {
+  const list = DATA.products.filter(p => !buyCat || productCat(p) === buyCat);
+  $('b-product').innerHTML = list.map(p =>
+    `<option value="${esc(p.name)}\u0001${esc(p.manufacturer || '')}">` +
+    esc(p.name + (p.manufacturer ? ' — ' + p.manufacturer : '')) + `</option>`).join('');
+}
+
+function suggestBestBefore(productName, manufacturer) {
+  // suggest a best-before date from the product's category shelf life (max months)
+  const p = DATA.products.find(x => x.name === productName &&
+    (x.manufacturer || '') === (manufacturer || ''));
+  const c = p && catById(productCat(p));
+  if (!c) return;
+  const months = c.shelf_life_months[1];
+  const d = new Date();
+  d.setMonth(d.getMonth() + months);
+  $('b-date').value = d.toISOString().slice(0, 10);
+}
+
+$('b-cat').addEventListener('change', e => { buyCat = e.target.value; renderBuyProducts(); });
+$('b-product').addEventListener('change', () => {
+  const [name, manufacturer] = ($('b-product').value || '').split('\u0001');
+  if (!$('b-date').value) suggestBestBefore(name, manufacturer);
+});
 
 // ---------- inventory (household tab) ----------
 function visibleInventory() {
@@ -536,7 +618,9 @@ function renderInventory() {
   tb.innerHTML = rows.map(r => `
     <tr class="${r.level === 'expired' ? 'expired' : ''}">
       <td>${esc(r.product)}${r.manufacturer ? '<br><small style="color:var(--muted)">' + esc(r.manufacturer) + '</small>' : ''}</td>
-      <td>${r.quantity}</td><td>${r.best_before}</td>
+      <td><input type="number" min="1" value="${r.quantity}" class="qty-input"
+            title="Change quantity"
+            onchange="setQty(${r.id}, this.value)"></td><td>${r.best_before}</td>
       <td>${r.level === 'expired' ? r.days_left + ' (over)' : r.days_left}</td>
       <td><span class="badge lvl-${r.level}">${LEVEL_LABEL[r.level]}</span></td>
       <td><button class="del" title="Remove item" onclick="delItem(${r.id})">✕</button></td>
@@ -565,6 +649,14 @@ window.delItem = async id => {
   if (j.error) alert(j.error); load();
 };
 
+// v2.3: change the quantity of an existing inventory item
+window.setQty = async (id, qty) => {
+  const j = await api('PUT', `/api/inventory/${id}`, {
+    household: HH, quantity: qty });
+  if (j.error) { alert(j.error); load(); }
+  else { msg('msg-buy', 'Quantity updated ✓', true); load(); }
+};
+
 $('f-buy').addEventListener('submit', async e => {
   e.preventDefault();
   const [name, manufacturer] = ($('b-product').value || '').split('\u0001');
@@ -575,7 +667,36 @@ $('f-buy').addEventListener('submit', async e => {
   if (!j.error) load();
 });
 
-// ---------- products (products tab) ----------
+// ---------- products setup (products tab) ----------
+function renderSetup() {
+  const sel = $('setup-cat');
+  const cur = setupCat && catById(setupCat) ? setupCat : (cats()[0] && cats()[0].id);
+  setupCat = cur;
+  catOptions(sel, cur);
+  const c = catById(cur);
+  if (!c) { $('setup-info').innerHTML = ''; $('setup-chips').innerHTML = ''; return; }
+  $('setup-info').innerHTML =
+    `<span class="pill">Storage: ${esc(STORAGE_LABEL[c.storage] || c.storage)}</span>` +
+    `<span class="pill">Typical shelf life: ${c.shelf_life_months[0]}–${c.shelf_life_months[1]} months</span>`;
+  $('setup-chips').innerHTML = c.items.map(it => {
+    const added = DATA.products.some(p =>
+      p.name.toLowerCase() === it.toLowerCase() && productCat(p) === cur);
+    return added
+      ? `<button type="button" class="chip added" title="Already on the list">${esc(it)}</button>`
+      : `<button type="button" class="chip" title="Add to the global product list"
+          onclick="addSuggested('${esc(cur)}','${esc(it)}')">${esc(it)}</button>`;
+  }).join('');
+}
+
+$('setup-cat').addEventListener('change', e => { setupCat = e.target.value; renderSetup(); });
+
+window.addSuggested = async (cat, name) => {
+  const j = await api('POST', '/api/products', { name, manufacturer: '', category: cat });
+  msg('msg-setup', j.error || `Added "${name}" ✓`, !j.error);
+  if (!j.error) load();
+};
+
+// ---------- products list (products tab) ----------
 function visibleProducts() {
   let rows = DATA.products;
   if (prodFilter) {
@@ -583,11 +704,12 @@ function visibleProducts() {
     rows = rows.filter(p =>
       p.name.toLowerCase().includes(q) ||
       (p.manufacturer || '').toLowerCase().includes(q) ||
-      (p.category || '').toLowerCase().includes(q));
+      catLabel(p.category).toLowerCase().includes(q));
   }
   rows = [...rows].sort((a, b) => {
     const k = prodSort.key, d = prodSort.dir;
-    let va = (a[k] || '').toLowerCase(), vb = (b[k] || '').toLowerCase();
+    let va = k === 'category' ? catLabel(a.category) : (a[k] || '').toLowerCase();
+    let vb = k === 'category' ? catLabel(b.category) : (b[k] || '').toLowerCase();
     return (va > vb ? 1 : va < vb ? -1 : 0) * d;
   });
   return rows;
@@ -598,7 +720,7 @@ function renderProducts() {
   const tb = $('t-products').querySelector('tbody');
   tb.innerHTML = rows.map(p =>
     `<tr><td>${esc(p.name)}</td><td>${esc(p.manufacturer || '—')}</td>
-     <td>${esc(p.category || '—')}</td>
+     <td>${esc(catLabel(p.category) || '—')}</td>
      <td>
        ${USER.is_admin ? `<button class="del" title="Edit product (admin)"
          onclick="editProduct('${esc(p.name)}','${esc(p.manufacturer || '')}')">✎</button>` : ''}
@@ -611,6 +733,10 @@ function renderProducts() {
   document.querySelectorAll('#t-products th.sortable').forEach(th =>
     th.querySelector('.arrow').textContent = th.dataset.key === prodSort.key
       ? (prodSort.dir > 0 ? '▲' : '▼') : '');
+  // keep the manual-add category select filled
+  const pc = $('p-cat');
+  const cur = pc.value;
+  catOptions(pc, cats().some(c => c.id === cur) ? cur : (cats()[0] && cats()[0].id));
 }
 
 $('prod-filter').addEventListener('input', e => { prodFilter = e.target.value; renderProducts(); });
@@ -625,9 +751,10 @@ $('t-products').querySelector('thead').addEventListener('click', e => {
 $('f-product').addEventListener('submit', async e => {
   e.preventDefault();
   const j = await api('POST', '/api/products', {
-    name: $('p-name').value, manufacturer: $('p-man').value, category: $('p-cat').value });
+    name: $('p-name').value, manufacturer: $('p-man').value,
+    category: $('p-cat').value });
   msg('msg-product', j.error || 'Saved ✓', !j.error);
-  if (!j.error) { $('p-name').value = ''; $('p-man').value = ''; $('p-cat').value = ''; load(); }
+  if (!j.error) { $('p-name').value = ''; $('p-man').value = ''; load(); }
 });
 
 window.delProduct = async (name, manufacturer) => {
@@ -646,7 +773,7 @@ window.editProduct = async (name, manufacturer) => {
   peOld = { name: p.name, manufacturer: p.manufacturer || '' };
   $('pe-name').value = p.name;
   $('pe-man').value = p.manufacturer || '';
-  $('pe-cat').value = p.category || '';
+  catOptions($('pe-cat'), p.category || '');
   msg('msg-pe', '');
   $('pe-modal').hidden = false;
   $('pe-name').focus();

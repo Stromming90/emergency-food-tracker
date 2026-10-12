@@ -15,10 +15,19 @@ including TrueNAS.
 - 📋 **Global product list** — name, manufacturer, category; extend any time.
   The list is shared by **all households**: a product added by one household
   is immediately available to everyone.
+- 🗂️ **Curated emergency-food categories** — the Products tab is built around
+  nine categories (dry staples & carbohydrates, canned & jarred ready foods,
+  protein, fats & cooking, extras & sweeteners, beverages, instant meals,
+  snacks & morale, supplements), each with typical storage and shelf-life
+  guidance and a list of suggested items you can add with one click.
 - ✏️ **Admin product editing** — admins can edit all product fields (name,
   manufacturer, category) from a proper edit dialog; changes propagate to
   every household's inventory.
-- 🛒 **Purchases** — per product + manufacturer, with best-before date & quantity
+- 🛒 **Purchases** — per product + manufacturer, with best-before date &
+  quantity; the product picker can be filtered by category and suggests a
+  best-before date from the category's typical shelf life.
+- ♻️ **Editable quantities** — change the quantity of an inventory item
+  directly in the table.
 - ⏰ **Expiry alerts** — colour-coded badges: fine · Less than 6 months ·
   Less than 3 months · Less than 1 month · expired (page auto-refreshes every
   minute). Each item shows only its **most urgent** warning level.
@@ -41,22 +50,49 @@ including TrueNAS.
 
 The app is organised into two main tabs:
 
-- **🏠 Household** — *Record a purchase* at the top, your **Inventory**
-  below. Filter by product/manufacturer text or by expiry status, and click
-  any column header (Product, Qty, Best before, Days, Status) to sort.
-- **📋 Products** — the global product list: add products, search/filter,
-  sort by column, and (as admin) edit or remove products. Removing a product
-  from the list never deletes existing inventory items.
+- **🏠 Household** — *Record a purchase* at the top (with a category filter
+  for the product picker), your **Inventory** below. Filter by
+  product/manufacturer text or by expiry status, click any column header
+  (Product, Qty, Best before, Days, Status) to sort, and edit an item's
+  quantity inline. To remove an item, use its ✕ button.
+- **📋 Products** — the global product list, set up from curated categories:
+  pick a category to see its storage & shelf-life guidance and click
+  suggested items to add them (already-added items are ticked). A manual add
+  form and the full product table (filter, sort, admin edit/remove) are
+  below. Removing a product from the list never deletes existing inventory
+  items.
 
 Settings (⚙️, admins only) are organised in tabs: Users / Households /
 Authentication / API key.
+
+### Product categories
+
+Products are organised into nine curated emergency-food categories:
+
+| Category | Typical storage | Shelf life |
+|---|---|---|
+| Dry staples & carbohydrates | cool & dry | 1–3 years |
+| Canned & jarred ready foods | pantry | 1–4 years |
+| Protein | pantry | 6–24 months |
+| Fats & cooking | cool & dry | 6–18 months |
+| Extras & sweeteners | pantry | 2–5 years |
+| Beverages | cool & dry | 1–3 years |
+| Instant meals (just add water) | pantry | 1–3 years |
+| Snacks & morale | cool & dry | 6–18 months |
+| Supplements | cool & dry | 1–3 years |
+
+Each category ships with suggested items (pasta, rice, canned fish,
+peanut butter, …) that you can add to your product list with one click.
+The category's shelf-life range is also used to suggest a best-before
+date when recording a purchase. Products created before v2.3 with
+free-text categories keep working and remain editable.
 
 ## Run with Docker
 
 The project publishes a prebuilt image to GitHub Container Registry —
 every push to `main` triggers a GitHub Actions build automatically
 (see `.github/workflows/docker-publish.yml`). The image is tagged `latest`
-and with the current release version (e.g. `v2.2`).
+and with the current release version (e.g. `v2.3`).
 
 ```yaml
 services:

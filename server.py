@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.2)
+Emergency Food Storage Tracker — Web UI server (v2.3)
 =====================================================
 Zero-dependency web server (Python stdlib only).
+
+v2.3:
+- Curated emergency-food categories (storage + shelf-life guidance),
+  exposed to the UI and used by the Products setup
+- PUT /api/inventory/<id>: change the quantity of an existing item
+- /api/data now includes the category catalogue
 
 v2.2:
 - Widget: total_items now counts the TOTAL QUANTITY (cans/units), not rows
@@ -51,6 +57,48 @@ INVENTORY_HEADER = ["id", "product", "manufacturer", "best_before", "quantity", 
 
 SESSIONS = {}
 SESSION_TTL = 7 * 24 * 3600
+
+# v2.3: curated emergency-food category catalogue. Products reference a
+# category by its `id` (legacy products may still carry free-text categories).
+EMERGENCY_FOOD_CATEGORIES = [
+    {"id": "dry_staples_carbs", "label": "Dry staples & carbohydrates",
+     "types": ["dry_good"], "storage": "cool_dry", "shelf_life_months": [12, 36],
+     "items": ["pasta", "rice", "couscous", "flour", "oats", "rolled grains",
+               "crispbread", "flatbread", "potato flakes", "muesli", "granola",
+               "porridge oats"]},
+    {"id": "canned_ready_foods", "label": "Canned & jarred ready foods",
+     "types": ["canned", "jarred"], "storage": "pantry", "shelf_life_months": [12, 48],
+     "items": ["ravioli", "canned soups", "chili", "stew", "baked beans",
+               "beans in tomato sauce", "chickpeas", "lentils", "corn", "peas",
+               "beetroot", "potatoes", "carrots",
+               "canned fish (tuna, mackerel, sardines, herring)", "canned fruit",
+               "applesauce", "berry purée"]},
+    {"id": "protein_sources", "label": "Protein",
+     "types": ["protein", "canned", "jarred"], "storage": "pantry",
+     "shelf_life_months": [6, 24],
+     "items": ["peanut butter", "nut butters", "nuts", "seeds", "powdered milk",
+               "UHT milk", "plant-based milk", "cured meats (salami, jerky)",
+               "hard cheese (wax/vacuum)", "eggs", "shelf-stable tofu"]},
+    {"id": "fats_cooking", "label": "Fats & cooking",
+     "types": ["fat"], "storage": "cool_dry", "shelf_life_months": [6, 18],
+     "items": ["cooking oil", "olive oil", "butter", "ghee", "hard margarine",
+               "bouillon cubes", "stock powder"]},
+    {"id": "seasonings_sweeteners", "label": "Extras & sweeteners",
+     "types": ["seasoning"], "storage": "pantry", "shelf_life_months": [24, 60],
+     "items": ["salt", "sugar", "honey", "jam"]},
+    {"id": "beverages", "label": "Beverages",
+     "types": ["beverage"], "storage": "cool_dry", "shelf_life_months": [12, 36],
+     "items": ["coffee", "tea", "cocoa"]},
+    {"id": "instant_meals", "label": "Instant meals (just add water)",
+     "types": ["instant_meal"], "storage": "pantry", "shelf_life_months": [12, 36],
+     "items": ["freeze-dried meals", "cup noodles", "instant soups"]},
+    {"id": "snacks_morale", "label": "Snacks & morale",
+     "types": ["snack"], "storage": "cool_dry", "shelf_life_months": [6, 18],
+     "items": ["chocolate", "dried fruit", "salted nuts", "roasted snacks"]},
+    {"id": "supplements", "label": "Supplements",
+     "types": ["supplement"], "storage": "cool_dry", "shelf_life_months": [12, 36],
+     "items": ["multivitamins"]},
+]
 
 
 # ======================= small utilities =======================
@@ -427,6 +475,25 @@ def remove_item(household, item_id):
     write_csv(inv_path, INVENTORY_HEADER, remaining)
 
 
+def update_quantity(household, item_id, quantity):
+    """v2.3: change the quantity of an existing inventory item."""
+    ensure_household(household)
+    inv_path = os.path.join(household_dir(household), "inventory.csv")
+    try:
+        quantity = int(quantity)
+    except (TypeError, ValueError):
+        raise ValueError("Quantity must be a whole number.")
+    if quantity < 1:
+        raise ValueError("Quantity must be at least 1. Use the ✕ button to remove an item.")
+    inv = read_csv(inv_path)
+    for r in inv:
+        if r["id"] == str(item_id):
+            r["quantity"] = str(quantity)
+            write_csv(inv_path, INVENTORY_HEADER, inv)
+            return
+    raise ValueError("Item not found.")
+
+
 def migrate_items(from_hh, to_hh, item_ids=None):
     """Admin: move all (or selected) inventory items from one household to another."""
     ensure_household(from_hh)
@@ -586,7 +653,7 @@ class Handler(BaseHTTPRequestHandler):
                     "configured": user_count() > 0,
                     "oidc_enabled": oidc_enabled(),
                     "oidc_name": cfg["oidc"].get("issuer", "").rstrip("/").split("//")[-1],
-                    "version": "2.2",
+                    "version": "2.3",
                     "user": (dict(username=user["username"],
                                   is_admin=user.get("is_admin", False),
                                   households=user_households(user)) if user else None),
@@ -596,6 +663,7 @@ class Handler(BaseHTTPRequestHandler):
                 h = self.household_of(user)
                 self.reply(200, {"products": products_view(),   # global
                                  "inventory": inventory_view(h),
+                                 "categories": EMERGENCY_FOOD_CATEGORIES,
                                  "today": today().isoformat(),
                                  "household": h,
                                  "households": list_households()})
@@ -665,7 +733,7 @@ class Handler(BaseHTTPRequestHandler):
         state = qs.get("state", [""])[0]
         if not state or "oidc-state-" + state not in SESSIONS:
             raise ValueError("Invalid OIDC state.")
-        SESSIONS.pop("oidc-state-" + state)
+        SESSIONS.pop("oidc-state-" + state, None)
         code = qs.get("code", [""])[0]
         if not code:
             raise ValueError("No code from OIDC provider.")
@@ -796,6 +864,14 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         try:
             body = self.read_body()
+            m = re.fullmatch(r"/api/inventory/(\d+)", path)
+            if m:
+                # v2.3: change the quantity of an existing inventory item
+                user = require_user(self)
+                update_quantity(self.household_of(user, body), m.group(1),
+                                 body.get("quantity"))
+                self.reply(200, {"ok": True})
+                return
             if path == "/api/products":
                 # admin: update a product globally
                 require_admin(self)
@@ -912,7 +988,7 @@ def main():
     cfg = get_config()
     print(f"Homepage widget key: {cfg['api_key']}")
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.2: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v2.3: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 
