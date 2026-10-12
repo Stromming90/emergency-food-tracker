@@ -9,5 +9,5 @@ services:
     ports:
       - "4500:8000"
     volumes:
-      - /mnt/apps-mirror/apps-data/emergency-food-tracker/config:/config
-      - /mnt/apps-mirror/apps-data/emergency-food-tracker/data:/data
+      - /mnt/apps/emergency-food-tracker/config:/config
+      - /mnt/apps/emergency-food-tracker/data:/data
