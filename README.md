@@ -26,21 +26,53 @@ including TrueNAS.
 
 ## Run with Docker
 
+The project publishes a prebuilt image to GitHub Container Registry —
+every push to `main` triggers a GitHub Actions build automatically
+(see `.github/workflows/docker-publish.yml`).
+
 ```yaml
 services:
   food-tracker:
-    build:
-      context: https://github.com/Stromming90/emergency-food-tracker.git
+    image: ghcr.io/stromming90/emergency-food-tracker:latest
     container_name: food-tracker
     restart: unless-stopped
     ports:
       - "4500:8000"          # host:container
     volumes:
-      - /mnt/apps/emergency-food-tracker/config:/config
-      - /mnt/apps/emergency-food-tracker/data:/data
+      - /mnt/apps-mirror/apps-data/emergency-food-tracker/config:/config
+      - /mnt/apps-mirror/apps-data/emergency-food-tracker/data:/data
 ```
 
 `docker compose up -d`, then open `http://<host>:4500`.
+
+### Updating to a new version
+
+Because the app runs from a prebuilt image, updating is the same as with any
+Docker app — no rebuild from source:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+In Dockge: open the stack → **Pull images** (or edit → **Deploy**) and the
+new version is fetched and started. Your data in `/data` and `/config` is
+untouched.
+
+> The GHCR package must be **public** for the host to pull it without
+> logging in. After the first successful Actions run, go to your GitHub
+> profile → **Packages** → `emergency-food-tracker` → **Package settings**
+> → **Change visibility** → Public. (Alternatively `docker login ghcr.io`
+> with a GitHub token on the host for private packages.)
+
+If you prefer building from source instead of the registry image, replace
+`image:` with:
+
+```yaml
+    build:
+      context: https://github.com/Stromming90/emergency-food-tracker.git
+```
+
+— and rebuild with `docker compose build --pull --no-cache` on updates.
 
 **First visit:** you're asked to create the **admin account** (and can name
 your first household, e.g. "home"). After that, the login screen has a

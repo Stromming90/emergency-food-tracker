@@ -1,7 +1,9 @@
 services:
   food-tracker:
-    build:
-      context: .
+    # Prebuilt image — automatically rebuilt on every push to main
+    # via GitHub Actions (.github/workflows/docker-publish.yml).
+    # The image name must be lowercase.
+    image: ghcr.io/stromming90/emergency-food-tracker:latest
     container_name: food-tracker
     restart: unless-stopped
     ports:
