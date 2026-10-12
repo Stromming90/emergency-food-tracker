@@ -1,4 +1,4 @@
-name,category,added_date
-Canned beans,Canned,2026-10-12
-Powdered milk 500g,Dairy,2026-10-12
-Rice 5kg,Dry goods,2026-10-12
+name,manufacturer,category,added_date
+Canned beans,Example Foods,Canned,2026-10-12
+Powdered milk 500g,,Dairy,2026-10-12
+Rice 5kg,,Dry goods,2026-10-12

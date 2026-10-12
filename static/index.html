@@ -7,26 +7,34 @@
 <style>
   :root {
     --bg: #f4f6f8; --card: #fff; --text: #1c2733; --muted: #68788a;
-    --accent: #2563eb; --ok: #16a34a; --warn6: #eab308; --warn3: #f97316;
-    --warn1: #dc2626; --expired: #7f1d1d; --border: #dde3ea;
+    --accent: #2563eb; --accent2: #1d4ed8; --ok: #16a34a; --warn6: #eab308;
+    --warn3: #f97316; --warn1: #dc2626; --expired: #7f1d1d; --border: #dde3ea;
+    --input-bg: #fff; --shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+  [data-theme="dark"] {
+    --bg: #111827; --card: #1c2733; --text: #e5edf5; --muted: #8ba3b8;
+    --accent: #3b82f6; --accent2: #2563eb; --ok: #22c55e; --warn6: #eab308;
+    --warn3: #f97316; --warn1: #ef4444; --expired: #f87171; --border: #2e3d4d;
+    --input-bg: #16202b; --shadow: 0 1px 3px rgba(0,0,0,.4);
   }
   * { box-sizing: border-box; }
   body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text);
-         margin: 0; padding: 24px; }
+         margin: 0; padding: 24px; transition: background .2s, color .2s; }
   h1 { margin: 0 0 4px; font-size: 1.5rem; }
-  .sub { color: var(--muted); margin: 0 0 24px; font-size: .9rem; }
+  .sub { color: var(--muted); margin: 0 0 20px; font-size: .9rem; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
           gap: 20px; align-items: start; }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
-          padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+          padding: 18px; box-shadow: var(--shadow); }
   .card h2 { font-size: 1.05rem; margin: 0 0 14px; }
   form { display: flex; gap: 8px; flex-wrap: wrap; }
   input, select, button { font: inherit; padding: 8px 10px; border-radius: 8px;
-          border: 1px solid var(--border); background: #fff; }
+          border: 1px solid var(--border); background: var(--input-bg); color: var(--text); }
   input { flex: 1; min-width: 110px; }
   button { background: var(--accent); color: #fff; border: none; cursor: pointer;
            padding: 8px 16px; }
-  button:hover { filter: brightness(1.08); }
+  button:hover { background: var(--accent2); }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
   .msg { min-height: 20px; font-size: .85rem; margin-top: 8px; }
   .msg.error { color: var(--warn1); }
   .msg.ok { color: var(--ok); }
@@ -47,80 +55,284 @@
   .legend { display: flex; gap: 10px; flex-wrap: wrap; font-size: .75rem; margin-bottom: 14px; }
   .empty { color: var(--muted); font-size: .85rem; padding: 10px 0; }
   .scroll { max-height: 420px; overflow-y: auto; }
+
+  /* header bar */
+  .topbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+            margin-bottom: 18px; }
+  .topbar .spacer { flex: 1; }
+  .topbar select { max-width: 220px; }
+  .iconbtn { padding: 6px 10px; background: transparent; border: 1px solid var(--border);
+             color: var(--text); cursor: pointer; border-radius: 8px; }
+  .iconbtn:hover { background: var(--border); }
+
+  /* auth screens */
+  .auth { max-width: 380px; margin: 10vh auto; }
+  .auth h1 { text-align: center; }
+  .auth form { flex-direction: column; }
+  .auth input { width: 100%; }
+  .auth button { width: 100%; margin-top: 10px; }
+  .divider { text-align: center; color: var(--muted); font-size: .8rem; margin: 14px 0 6px; }
+
+  /* admin modal */
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex;
+              align-items: center; justify-content: center; padding: 16px; z-index: 50; }
+  .modal { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+           padding: 20px; max-width: 720px; width: 100%; max-height: 85vh; overflow-y: auto; }
+  .modal h2 { margin-top: 0; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
+  .muted { color: var(--muted); font-size: .82rem; }
+  code { background: var(--border); padding: 1px 6px; border-radius: 6px;
+         font-size: .8rem; word-break: break-all; }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
-<h1>🥫 Emergency Food Storage</h1>
-<p class="sub" id="today"></p>
+<div id="auth" hidden>
+  <!-- setup / login -->
+  <div class="auth card">
+    <h1>🥫 Emergency Food Storage</h1>
+    <div class="sub" style="text-align:center" id="auth-sub"></div>
 
-<div class="grid">
-  <div class="card">
-    <h2>Add product to list</h2>
-    <form id="f-product">
-      <input id="p-name" placeholder="Product name" required>
-      <input id="p-cat" placeholder="Category (optional)">
-      <button type="submit">Add</button>
+    <form id="f-setup" hidden>
+      <h2 style="text-align:center">First-time setup</h2>
+      <p class="muted" style="text-align:center">Create the admin account. You can also
+      name your first household (defaults to "default").</p>
+      <input id="s-user" placeholder="Admin username" autocomplete="username" required>
+      <input id="s-pass" type="password" placeholder="Password (min 8 chars)"
+             autocomplete="new-password" required>
+      <input id="s-household" placeholder="First household name (optional)">
+      <button type="submit">Create admin account</button>
     </form>
-    <div class="msg" id="msg-product"></div>
-    <h2 style="margin-top:18px">Product list</h2>
-    <div class="scroll">
-      <table id="t-products"><thead><tr><th>Product</th><th>Category</th><th></th></tr></thead>
-      <tbody></tbody></table>
-      <div class="empty" id="empty-products" hidden>No products yet.</div>
+
+    <form id="f-login" hidden>
+      <h2 style="text-align:center">Sign in</h2>
+      <input id="l-user" placeholder="Username" autocomplete="username" required>
+      <input id="l-pass" type="password" placeholder="Password" autocomplete="current-password" required>
+      <button type="submit">Log in</button>
+      <button type="button" id="b-oidc" class="ghost" hidden style="margin-top:8px">
+        Log in with SSO</button>
+      <div class="msg" id="msg-auth"></div>
+    </form>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <div class="topbar">
+    <h1 style="font-size:1.2rem;margin:0">🥫 Emergency Food Storage</h1>
+    <select id="household" title="Household"></select>
+    <span class="spacer"></span>
+    <button class="iconbtn" id="b-admin" title="Admin" hidden>⚙️</button>
+    <button class="iconbtn" id="b-theme" title="Theme: light / dark / auto">🌙</button>
+    <button class="iconbtn" id="b-logout" title="Log out">⏻</button>
+  </div>
+  <p class="sub" id="today"></p>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Add product to list</h2>
+      <form id="f-product">
+        <input id="p-name" placeholder="Product name" required>
+        <input id="p-man" placeholder="Manufacturer (optional)">
+        <input id="p-cat" placeholder="Category (optional)">
+        <button type="submit">Add</button>
+      </form>
+      <div class="msg" id="msg-product"></div>
+      <h2 style="margin-top:18px">Product list</h2>
+      <div class="scroll">
+        <table id="t-products"><thead><tr><th>Product</th><th>Manufacturer</th><th>Category</th><th></th></tr></thead>
+        <tbody></tbody></table>
+        <div class="empty" id="empty-products" hidden>No products yet.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Record a purchase</h2>
+      <form id="f-buy">
+        <select id="b-product" required></select>
+        <input id="b-date" type="date" required>
+        <input id="b-qty" type="number" min="1" value="1" style="flex:0;width:70px" title="Quantity">
+        <button type="submit">Buy</button>
+      </form>
+      <div class="msg" id="msg-buy"></div>
+      <h2 style="margin-top:18px">Inventory</h2>
+      <div class="legend">
+        <span class="badge lvl-6months">&lt; 6 months</span>
+        <span class="badge lvl-3months">&lt; 3 months</span>
+        <span class="badge lvl-1month">&lt; 1 month</span>
+        <span class="badge lvl-expired">expired</span>
+      </div>
+      <div class="scroll">
+        <table id="t-inventory"><thead>
+          <tr><th>Product</th><th>Qty</th><th>Best before</th><th>Days</th><th></th><th></th></tr>
+        </thead><tbody></tbody></table>
+        <div class="empty" id="empty-inventory" hidden>Inventory is empty.</div>
+      </div>
     </div>
   </div>
+</div>
 
-  <div class="card">
-    <h2>Record a purchase</h2>
-    <form id="f-buy">
-      <select id="b-product" required></select>
-      <input id="b-date" type="date" required>
-      <input id="b-qty" type="number" min="1" value="1" style="flex:0;width:70px" title="Quantity">
-      <button type="submit">Buy</button>
-    </form>
-    <div class="msg" id="msg-buy"></div>
-    <h2 style="margin-top:18px">Inventory</h2>
-    <div class="legend">
-      <span class="badge lvl-6months">&lt; 6 months</span>
-      <span class="badge lvl-3months">&lt; 3 months</span>
-      <span class="badge lvl-1month">&lt; 1 month</span>
-      <span class="badge lvl-expired">expired</span>
+<!-- admin modal -->
+<div class="modal-bg" id="admin-modal" hidden>
+  <div class="modal">
+    <div class="row" style="justify-content:space-between">
+      <h2>Admin</h2>
+      <button class="del" id="admin-close" title="Close">✕</button>
     </div>
-    <div class="scroll">
-      <table id="t-inventory"><thead>
-        <tr><th>Product</th><th>Qty</th><th>Best before</th><th>Days</th><th></th><th></th></tr>
-      </thead><tbody></tbody></table>
-      <div class="empty" id="empty-inventory" hidden>Inventory is empty.</div>
+
+    <h3>Users</h3>
+    <table id="t-users"><thead>
+      <tr><th>User</th><th>Admin</th><th>Households</th><th></th></tr></thead><tbody></tbody></table>
+    <div class="row" style="margin-top:10px">
+      <input id="nu-user" placeholder="New username" style="max-width:160px">
+      <input id="nu-pass" type="password" placeholder="Password" style="max-width:140px">
+      <label class="muted"><input type="checkbox" id="nu-admin"> admin</label>
+      <input id="nu-households" placeholder="households (comma-sep)" style="max-width:200px">
+      <button id="nu-add" class="ghost">Create user</button>
     </div>
+    <div class="msg" id="msg-admin-users"></div>
+
+    <h3>Households</h3>
+    <div id="hh-list" class="muted"></div>
+    <div class="row">
+      <input id="hh-new" placeholder="New household name" style="max-width:220px">
+      <button id="hh-add" class="ghost">Create household</button>
+    </div>
+    <div class="msg" id="msg-admin-hh"></div>
+
+    <h3>OIDC / SSO (Keycloak etc.)</h3>
+    <div class="row"><input id="o-issuer" placeholder="Issuer URL, e.g. https://keycloak/realms/myrealm" style="min-width:260px"></div>
+    <div class="row"><input id="o-client" placeholder="Client ID" style="min-width:180px">
+      <input id="o-secret" type="password" placeholder="Client secret" style="min-width:180px"></div>
+    <div class="row"><input id="o-redirect" placeholder="Redirect URI (optional, auto if blank)" style="min-width:260px"></div>
+    <div class="row"><input id="o-admins" placeholder="Admin emails (comma-sep)" style="min-width:260px"></div>
+    <label class="muted"><input type="checkbox" id="o-auto" checked> auto-create unknown users on first SSO login</label>
+    <div class="row"><button id="o-save">Save OIDC settings</button></div>
+    <div class="msg" id="msg-admin-oidc"></div>
+
+    <h3>Homepage widget</h3>
+    <p class="muted">Use this key in your gethomepage widget config:</p>
+    <code id="apikey">…</code>
   </div>
 </div>
 
 <script>
 const $ = id => document.getElementById(id);
-let DATA = { products: [], inventory: [] };
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+  .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 
+// ---------- theme ----------
+const THEMES = ['auto','light','dark'];
+const ICONS = { auto: '🌓', light: '☀️', dark: '🌙' };
+function applyTheme() {
+  const t = localStorage.getItem('theme') || 'auto';
+  const dark = t === 'dark' ||
+    (t === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  $('b-theme').textContent = ICONS[t];
+}
+$('b-theme').addEventListener('click', () => {
+  const cur = localStorage.getItem('theme') || 'auto';
+  localStorage.setItem('theme', THEMES[(THEMES.indexOf(cur) + 1) % 3]);
+  applyTheme();
+});
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+applyTheme();
+
+// ---------- state ----------
+let BOOT = null, USER = null, DATA = null, HH = 'default';
+
+async function api(method, url, body) {
+  const r = await fetch(url, { method,
+    headers: body ? {'Content-Type': 'application/json'} : {},
+    body: body ? JSON.stringify(body) : undefined });
+  let j; try { j = await r.json(); } catch { j = { error: 'bad response' }; }
+  if (r.status === 401 && !url.includes('/api/bootstrap')) { showAuth(); throw new Error(j.error||'401'); }
+  return j;
+}
+
+function msg(id, text, ok) {
+  $(id).textContent = text || '';
+  $(id).className = 'msg ' + (ok ? 'ok' : 'error');
+}
+
+// ---------- auth screens ----------
+function showAuth() {
+  $('auth').hidden = false; $('app').hidden = true;
+  if (BOOT?.configured) {
+    $('f-login').hidden = false;
+    $('b-oidc').hidden = !BOOT.oidc_enabled;
+  } else {
+    $('f-setup').hidden = false;
+    $('auth-sub').textContent = 'Welcome! Set up your admin account to begin.';
+  }
+}
+
+function showApp() {
+  $('auth').hidden = true; $('app').hidden = false;
+  $('b-admin').hidden = !USER.is_admin;
+  USER.households.forEach(h => {
+    const o = document.createElement('option');
+    o.value = o.textContent = h;
+    $('household').appendChild(o);
+  });
+  HH = localStorage.getItem('household');
+  if (!USER.households.includes(HH)) HH = USER.households[0];
+  $('household').value = HH;
+  load();
+}
+
+async function boot() {
+  BOOT = await api('GET', '/api/bootstrap');
+  USER = BOOT.user;
+  if (USER) showApp(); else showAuth();
+}
+
+$('f-setup').addEventListener('submit', async e => {
+  e.preventDefault();
+  const j = await api('POST', '/api/setup', {
+    username: $('s-user').value, password: $('s-pass').value,
+    household: $('s-household').value });
+  if (j.error) return msg('msg-auth', j.error, false);
+  location.reload();
+});
+
+$('f-login').addEventListener('submit', async e => {
+  e.preventDefault();
+  const j = await api('POST', '/api/login', {
+    username: $('l-user').value, password: $('l-pass').value });
+  if (j.error) return msg('msg-auth', j.error, false);
+  location.reload();
+});
+
+$('b-oidc').addEventListener('click', () => location.href = '/api/oidc/login');
+$('b-logout').addEventListener('click', async () => {
+  await api('POST', '/api/logout', {});
+  location.reload();
+});
+
+// ---------- main app ----------
 async function load() {
-  const r = await fetch('/api/data');
-  DATA = await r.json();
-  $('today').textContent = 'Today: ' + DATA.today + ' — items in stock: '
-      + DATA.inventory.length;
+  DATA = await api('GET', '/api/data?household=' + encodeURIComponent(HH));
+  if (DATA.error) { alert(DATA.error); return; }
+  localStorage.setItem('household', HH);
   render();
 }
 
 function render() {
-  // product select
+  $('today').textContent = 'Today: ' + DATA.today + ' — ' + HH +
+      ' — items in stock: ' + DATA.inventory.length;
   $('b-product').innerHTML = DATA.products.map(p =>
-    `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+    `<option value="${esc(p.name)}\u0001${esc(p.manufacturer || '')}">` +
+    esc(p.name + (p.manufacturer ? ' — ' + p.manufacturer : '')) + `</option>`).join('');
 
-  // product table
   const tb = $('t-products').querySelector('tbody');
   tb.innerHTML = DATA.products.map(p =>
-    `<tr><td>${esc(p.name)}</td><td>${esc(p.category || '—')}</td>
+    `<tr><td>${esc(p.name)}</td><td>${esc(p.manufacturer || '—')}</td>
+     <td>${esc(p.category || '—')}</td>
      <td><button class="del" title="Remove product"
-       onclick="delProduct('${esc(p.name)}')">✕</button></td></tr>`).join('');
+       onclick="delProduct('${esc(p.name)}','${esc(p.manufacturer || '')}')">✕</button></td></tr>`).join('');
   $('empty-products').hidden = DATA.products.length > 0;
 
-  // inventory table
   const ti = $('t-inventory').querySelector('tbody');
   ti.innerHTML = DATA.inventory.map(r => {
     const label = r.level === 'ok' ? 'fine' :
@@ -128,59 +340,127 @@ function render() {
       r.level === '1month' ? '&lt; 1 mo' :
       r.level === '3months' ? '&lt; 3 mo' : '&lt; 6 mo';
     return `<tr class="${r.level === 'expired' ? 'expired' : ''}">
-      <td>${esc(r.product)}</td><td>${r.quantity}</td>
-      <td>${r.best_before}</td>
+      <td>${esc(r.product)}${r.manufacturer ? '<br><small style="color:var(--muted)">' + esc(r.manufacturer) + '</small>' : ''}</td>
+      <td>${r.quantity}</td><td>${r.best_before}</td>
       <td>${r.level === 'expired' ? r.days_left + ' (over)' : r.days_left}</td>
       <td><span class="badge lvl-${r.level}">${label}</span></td>
-      <td><button class="del" title="Remove item"
-        onclick="delItem(${r.id})">✕</button></td></tr>`;
+      <td><button class="del" title="Remove item" onclick="delItem(${r.id})">✕</button></td></tr>`;
   }).join('');
   $('empty-inventory').hidden = DATA.inventory.length > 0;
 }
 
-function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
-  .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+window.delItem = async id => {
+  const j = await api('DELETE', `/api/inventory/${id}?household=${encodeURIComponent(HH)}`);
+  if (j.error) alert(j.error); load();
+};
+window.delProduct = async (name, manufacturer) => {
+  const j = await api('DELETE', '/api/products/' + encodeURIComponent(name) +
+      `?household=${encodeURIComponent(HH)}&manufacturer=${encodeURIComponent(manufacturer)}`);
+  if (j.error) alert(j.error); load();
+};
 
-function msg(id, text, ok) {
-  $(id).textContent = text;
-  $(id).className = 'msg ' + (ok ? 'ok' : 'error');
-}
+$('household').addEventListener('change', () => { HH = $('household').value; load(); });
 
-async function post(url, body, msgId) {
-  const r = await fetch(url, { method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(body) });
-  const j = await r.json();
-  msg(msgId, j.error || 'Saved ✓', !j.error);
+$('f-product').addEventListener('submit', async e => {
+  e.preventDefault();
+  const j = await api('POST', '/api/products', { household: HH,
+    name: $('p-name').value, manufacturer: $('p-man').value, category: $('p-cat').value });
+  msg('msg-product', j.error || 'Saved ✓', !j.error);
+  if (!j.error) { $('p-name').value = ''; $('p-man').value = ''; $('p-cat').value = ''; load(); }
+});
+
+$('f-buy').addEventListener('submit', async e => {
+  e.preventDefault();
+  const [name, manufacturer] = ($('b-product').value || '').split('\u0001');
+  const j = await api('POST', '/api/buy', { household: HH, product: name,
+    manufacturer: manufacturer || '', best_before: $('b-date').value,
+    quantity: $('b-qty').value || 1 });
+  msg('msg-buy', j.error || 'Saved ✓', !j.error);
   if (!j.error) load();
-}
-
-async function del(url) {
-  const r = await fetch(url, { method: 'DELETE' });
-  const j = await r.json();
-  if (j.error) alert(j.error);
-  load();
-}
-
-window.delItem = id => del('/api/inventory/' + id);
-window.delProduct = name => del('/api/products/' + encodeURIComponent(name));
-
-$('f-product').addEventListener('submit', e => {
-  e.preventDefault();
-  post('/api/products', { name: $('p-name').value, category: $('p-cat').value },
-       'msg-product');
-  $('p-name').value = ''; $('p-cat').value = '';
 });
 
-$('f-buy').addEventListener('submit', e => {
-  e.preventDefault();
-  post('/api/buy', { product: $('b-product').value,
-                     best_before: $('b-date').value,
-                     quantity: $('b-qty').value || 1 }, 'msg-buy');
+// ---------- admin ----------
+$('b-admin').addEventListener('click', openAdmin);
+$('admin-close').addEventListener('click', () => $('admin-modal').hidden = true);
+
+async function openAdmin() {
+  $('admin-modal').hidden = false;
+  const [u, h, c] = await Promise.all([
+    api('GET', '/api/admin/users'),
+    api('GET', '/api/admin/households'),
+    api('GET', '/api/admin/config')]);
+  if (u.error || h.error || c.error) { alert(u.error || h.error || c.error); return; }
+
+  $('t-users').querySelector('tbody').innerHTML = u.users.map(x =>
+    `<tr><td>${esc(x.username)}${x.oidc ? ' <span class="muted">(SSO)</span>' : ''}</td>
+     <td>${x.is_admin ? '✓' : ''}</td>
+     <td>${esc((x.households || []).join(', '))}</td>
+     <td>
+       <button class="del" title="Toggle admin"
+         onclick="toggleAdmin('${esc(x.username)}',${!x.is_admin})">⭐</button>
+       <button class="del" title="Edit households"
+         onclick="editHouseholds('${esc(x.username)}','${esc((x.households||[]).join(','))}')">🏠</button>
+       <button class="del" title="Delete user"
+         onclick="delUser('${esc(x.username)}')">✕</button>
+     </td></tr>`).join('');
+
+  $('hh-list').textContent = 'Existing: ' + h.households.join(', ');
+  $('apikey').textContent = c.api_key;
+
+  const o = c.oidc;
+  $('o-issuer').value = o.issuer || '';
+  $('o-client').value = o.client_id || '';
+  $('o-secret').value = o.client_secret || '';
+  $('o-redirect').value = o.redirect_uri || '';
+  $('o-admins').value = (o.admin_emails || []).join(',');
+  $('o-auto').checked = c.oidc_auto_create;
+}
+
+window.toggleAdmin = async (username, make) => {
+  const j = await api('PUT', '/api/admin/users', { username, is_admin: make });
+  if (j.error) alert(j.error); openAdmin();
+};
+window.editHouseholds = async (username, current) => {
+  const v = prompt(`Households for ${username} (comma-separated):`, current);
+  if (v === null) return;
+  const j = await api('PUT', '/api/admin/users',
+    { username, households: v.split(',').map(s => s.trim()).filter(Boolean) });
+  if (j.error) alert(j.error); openAdmin();
+};
+window.delUser = async username => {
+  if (!confirm(`Delete user ${username}?`)) return;
+  const j = await api('DELETE', '/api/admin/users/' + encodeURIComponent(username));
+  if (j.error) alert(j.error); openAdmin();
+};
+
+$('nu-add').addEventListener('click', async () => {
+  const j = await api('POST', '/api/admin/users', {
+    username: $('nu-user').value, password: $('nu-pass').value,
+    is_admin: $('nu-admin').checked,
+    households: $('nu-households').value.split(',').map(s => s.trim()).filter(Boolean) });
+  msg('msg-admin-users', j.error || 'User created ✓', !j.error);
+  if (!j.error) { $('nu-user').value = ''; $('nu-pass').value = ''; $('nu-households').value = ''; openAdmin(); }
 });
 
-load();
-setInterval(load, 60000); // refresh every minute
+$('hh-add').addEventListener('click', async () => {
+  const j = await api('POST', '/api/admin/households', { name: $('hh-new').value });
+  msg('msg-admin-hh', j.error || `Household '${j.household}' created ✓`, !j.error);
+  if (!j.error) $('hh-new').value = '';
+  openAdmin();
+});
+
+$('o-save').addEventListener('click', async () => {
+  const j = await api('POST', '/api/admin/oidc', {
+    issuer: $('o-issuer').value, client_id: $('o-client').value,
+    client_secret: $('o-secret').value, redirect_uri: $('o-redirect').value,
+    admin_emails: $('o-admins').value.split(',').map(s => s.trim()).filter(Boolean),
+    auto_create: $('o-auto').checked });
+  msg('msg-admin-oidc', j.error || (j.oidc_enabled ? 'OIDC enabled ✓' : 'Saved (OIDC not active until issuer+client id set)'), !j.error);
+  boot();
+});
+
+boot();
+setInterval(() => { if (USER) load(); }, 60000);
 </script>
 </body>
 </html>

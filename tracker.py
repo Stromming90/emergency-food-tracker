@@ -7,12 +7,16 @@ record purchases with best-before dates, and get desktop alerts
 6 months, 3 months and 1 month before each item expires.
 
 Usage:
-  python3 tracker.py add-product <name> [--category CAT]
+  python3 tracker.py add-product <name> [--manufacturer MAKER] [--category CAT]
   python3 tracker.py buy <product> <best-before YYYY-MM-DD> [--quantity N]
   python3 tracker.py list-products
   python3 tracker.py inventory [--product NAME]
   python3 tracker.py alerts
   python3 tracker.py check            # meant for cron: prints & notifies
+
+Environment:
+  DATA_DIR=...   data root (default: ./data — same as the web app)
+  HOUSEHOLD=...  household name (default: default)
 
 All data lives in CSV files next to this script (products.csv, inventory.csv),
 so the whole folder is your git repo — commit it to keep history.
@@ -30,17 +34,30 @@ from datetime import date, datetime
 BASE_DIR = os.environ.get(
     "DATA_DIR",
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
-PRODUCTS_CSV = os.path.join(BASE_DIR, "products.csv")
-INVENTORY_CSV = os.path.join(BASE_DIR, "inventory.csv")
+HOUSEHOLD = os.environ.get("HOUSEHOLD", "default")
+DATA_DIR = os.path.join(BASE_DIR, "households", HOUSEHOLD)
+PRODUCTS_CSV = os.path.join(DATA_DIR, "products.csv")
+INVENTORY_CSV = os.path.join(DATA_DIR, "inventory.csv")
 
 ALERT_WINDOWS_DAYS = {"6 months": 180, "3 months": 90, "1 month": 30}
-PRODUCTS_HEADER = ["name", "category", "added_date"]
-INVENTORY_HEADER = ["id", "product", "best_before", "quantity", "added_date"]
+PRODUCTS_HEADER = ["name", "manufacturer", "category", "added_date"]
+INVENTORY_HEADER = ["id", "product", "manufacturer", "best_before", "quantity", "added_date"]
 
 
 # ---------- storage helpers ----------
+def migrate_old_layout():
+    """Move data/products.csv & inventory.csv from the flat layout into
+    households/<default>/ the first time the new version runs."""
+    for fname in ("products.csv", "inventory.csv"):
+        old = os.path.join(BASE_DIR, fname)
+        new = os.path.join(DATA_DIR, fname)
+        if os.path.exists(old) and not os.path.exists(new):
+            ensure_files()
+            os.replace(old, new)
+
 
 def ensure_files():
+    os.makedirs(DATA_DIR, exist_ok=True)
     for path, header in ((PRODUCTS_CSV, PRODUCTS_HEADER), (INVENTORY_CSV, INVENTORY_HEADER)):
         if not os.path.exists(path):
             with open(path, "w", newline="", encoding="utf-8") as f:
@@ -79,9 +96,13 @@ def next_id(rows):
 def cmd_add_product(args):
     products = read_csv(PRODUCTS_CSV)
     name = args.name.strip()
-    if any(p["name"].lower() == name.lower() for p in products):
-        sys.exit(f"Product '{name}' is already on the list.")
-    products.append({"name": name, "category": args.category or "",
+    manufacturer = (args.manufacturer or "").strip()
+    if any(p["name"].lower() == name.lower()
+           and p.get("manufacturer", "").lower() == manufacturer.lower()
+           for p in products):
+        sys.exit(f"Product '{name}' by '{manufacturer or 'unknown maker'}' is already on the list.")
+    products.append({"name": name, "manufacturer": manufacturer,
+                     "category": args.category or "",
                      "added_date": today().isoformat()})
     products.sort(key=lambda p: p["name"].lower())
     write_csv(PRODUCTS_CSV, PRODUCTS_HEADER, products)
@@ -98,7 +119,13 @@ def cmd_buy(args):
     if best < today():
         sys.exit(f"Best-before date {best} is in the past.")
     inv = read_csv(INVENTORY_CSV)
+    manufacturer = ""
+    for p in products:
+        if p["name"].lower() == name.lower():
+            manufacturer = p.get("manufacturer", "")
+            break
     inv.append({"id": str(next_id(inv)), "product": name,
+                "manufacturer": manufacturer,
                 "best_before": best.isoformat(),
                 "quantity": str(args.quantity), "added_date": today().isoformat()})
     write_csv(INVENTORY_CSV, INVENTORY_HEADER, inv)
@@ -110,9 +137,10 @@ def cmd_list_products(args):
     if not products:
         print("No products on the list yet. Add some with 'add-product'.")
         return
-    print(f"{'Product':30} {'Category':20} Added")
+    print(f"{'Product':30} {'Manufacturer':20} {'Category':20} Added")
     for p in products:
-        print(f"{p['name']:30} {p['category']:20} {p['added_date']}")
+        print(f"{p['name']:30} {p.get('manufacturer', ''):20} "
+              f"{p['category']:20} {p['added_date']}")
 
 
 def cmd_inventory(args):
@@ -195,12 +223,14 @@ def cmd_check(args):
 # ---------- entry point ----------
 
 def main():
+    migrate_old_layout()
     ensure_files()
     parser = argparse.ArgumentParser(description="Emergency food storage tracker")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("add-product", help="Add a product to the permanent list")
     p.add_argument("name")
+    p.add_argument("--manufacturer", default="", help="Manufacturer / brand")
     p.add_argument("--category", default="")
     p.set_defaults(func=cmd_add_product)
 

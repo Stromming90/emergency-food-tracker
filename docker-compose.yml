@@ -1,10 +1,11 @@
 services:
   food-tracker:
-    build: .
+    build:
+      context: .
     container_name: food-tracker
     restart: unless-stopped
     ports:
-      - "4500:4500"
+      - "4500:8000"
     volumes:
-      # Point this at a persistent dataset on TrueNAS
-      - ./data:/data
+      - /mnt/apps-mirror/apps-data/emergency-food-tracker/config:/config
+      - /mnt/apps-mirror/apps-data/emergency-food-tracker/data:/data
