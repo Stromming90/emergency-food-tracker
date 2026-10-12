@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.1)
+Emergency Food Storage Tracker — Web UI server (v2.2)
 =====================================================
 Zero-dependency web server (Python stdlib only).
+
+v2.2:
+- Widget: total_items now counts the TOTAL QUANTITY (cans/units), not rows
+- Widget: new total_entries field for the number of distinct inventory rows
 
 v2.1:
 - Global product list (shared by all households; inventory stays per-household)
 - Admins can update products
 - Admins can migrate inventory items between households
 - Settings menu with tabs (users / households / authentication / API key)
-- Widget: multiple or all households, exclusive warning buckets, total items
+- Widget: multiple or all households, exclusive warning buckets
 
 Environment variables:
   DATA_DIR   household data root         (default ./data)
@@ -340,7 +344,7 @@ def add_product(name, manufacturer, category):
 
 
 def update_product(old_name, old_manufacturer, name, manufacturer, category):
-    """Admin: rename a product globally, updating all household inventories."""
+    """Admin: update a product globally, updating all household inventories."""
     products = read_csv(PRODUCTS_CSV)
     old_key = (old_name.strip().lower(), (old_manufacturer or "").strip().lower())
     match = next((p for p in products
@@ -482,30 +486,37 @@ def send_redirect(handler, location, set_cookie=None):
 def widget_response(households):
     """Aggregated widget data across the given households.
     Warning buckets are exclusive: an item only counts in its most
-    relevant bucket."""
+    relevant bucket.
+
+    v2.2: total_items is the TOTAL QUANTITY (sum of all units), not the
+    number of inventory rows. total_entries keeps the old row count."""
     households = [h for h in households if h]
-    total = 0
+    entries = 0
     quantities = 0
     counts = {"expired": 0, "1month": 0, "3months": 0, "6months": 0, "ok": 0}
     expiring = []
-    for hh in households:
-        for r in inventory_view(hh):
-            counts[r["level"]] += 1
-            total += 1
-            quantities += r["quantity"]
-            if r["level"] != "ok":
-                expiring.append({**r, "household": hh})
-    expiring.sort(key=lambda r: r["days_left"])
-    # per-household breakdown
     per_household = {}
     for hh in households:
-        items = inventory_view(hh)
-        per_household[hh] = {"total_items": len(items),
-                             "attention": sum(1 for r in items if r["level"] != "ok")}
+        hh_entries = 0
+        hh_qty = 0
+        hh_attention = 0
+        for r in inventory_view(hh):
+            counts[r["level"]] += 1
+            entries += 1
+            hh_entries += 1
+            quantities += r["quantity"]
+            hh_qty += r["quantity"]
+            if r["level"] != "ok":
+                hh_attention += 1
+                expiring.append({**r, "household": hh})
+        per_household[hh] = {"total_items": hh_qty, "total_entries": hh_entries,
+                             "attention": hh_attention}
+    expiring.sort(key=lambda r: r["days_left"])
     return {
         "households": households,
-        "total_items": total,
-        "total_quantity": quantities,
+        "total_items": quantities,        # total quantity (units), v2.2
+        "total_quantity": quantities,     # alias, same value
+        "total_entries": entries,        # number of distinct inventory rows
         "expiring_within_1_month": counts["1month"],
         "expiring_within_3_months": counts["3months"],
         "expiring_within_6_months": counts["6months"],
@@ -575,7 +586,7 @@ class Handler(BaseHTTPRequestHandler):
                     "configured": user_count() > 0,
                     "oidc_enabled": oidc_enabled(),
                     "oidc_name": cfg["oidc"].get("issuer", "").rstrip("/").split("//")[-1],
-                    "version": "2.1",
+                    "version": "2.2",
                     "user": (dict(username=user["username"],
                                   is_admin=user.get("is_admin", False),
                                   households=user_households(user)) if user else None),
@@ -901,7 +912,7 @@ def main():
     cfg = get_config()
     print(f"Homepage widget key: {cfg['api_key']}")
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.1: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v2.2: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 

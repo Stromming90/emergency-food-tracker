@@ -13,17 +13,21 @@ including TrueNAS.
 - 📋 **Global product list** — name, manufacturer, category; extend any time.
   The list is shared by **all households**: a product added by one household
   is immediately available to everyone.
-- ✏️ **Admin product editing** — admins can rename/update any product on the
-  list (✎ button); the change propagates to every household's inventory.
+- ✏️ **Admin product editing** — admins can edit all product fields (name,
+  manufacturer, category) from a proper edit dialog; changes propagate to
+  every household's inventory.
 - 🛒 **Purchases** — per product + manufacturer, with best-before date & quantity
 - ⏰ **Expiry alerts** — colour-coded badges: fine · Less than 6 months ·
   Less than 3 months · Less than 1 month · expired (page auto-refreshes every
   minute). Each item shows only its **most urgent** warning level.
+- 🔍 **Filter & sort** — both the inventory and the product list can be
+  filtered by text and (for the inventory) by expiry status, and sorted by
+  clicking any column header.
 - 👤 **User accounts** — first visit creates the admin account; sessions last
   7 days (PBKDF2-hashed passwords, HttpOnly cookies)
 - 🏠 **Households** — separate inventories per household; users can belong
-  to several and switch between them via the top bar dropdown. Inventories
-  can be **migrated** to other households (Settings → Households).
+  to several and switch between them via the labelled top bar dropdown.
+  Inventories can be **migrated** to other households (Settings → Households).
 - 🌙 **Dark mode** — auto (follows your device), light or dark, per browser
 - 🔑 **OIDC / SSO** — login via Keycloak (or any OIDC provider), optional
   auto-provisioning of unknown users, admin-by-email whitelist
@@ -31,11 +35,26 @@ including TrueNAS.
   per household or across all households
 - 💻 **CLI** — same data as the web app, handy for cron/scripts
 
+## The web UI
+
+The app is organised into two main tabs:
+
+- **🏠 Household** — *Record a purchase* at the top, your **Inventory**
+  below. Filter by product/manufacturer text or by expiry status, and click
+  any column header (Product, Qty, Best before, Days, Status) to sort.
+- **📋 Products** — the global product list: add products, search/filter,
+  sort by column, and (as admin) edit or remove products. Removing a product
+  from the list never deletes existing inventory items.
+
+Settings (⚙️, admins only) are organised in tabs: Users / Households /
+Authentication / API key.
+
 ## Run with Docker
 
 The project publishes a prebuilt image to GitHub Container Registry —
 every push to `main` triggers a GitHub Actions build automatically
-(see `.github/workflows/docker-publish.yml`).
+(see `.github/workflows/docker-publish.yml`). The image is tagged `latest`
+and with the current release version (e.g. `v2.2`).
 
 ```yaml
 services:
@@ -67,6 +86,13 @@ docker compose pull && docker compose up -d
 In Dockge: open the stack → **Pull images** (or edit → **Deploy**) and the
 new version is fetched and started. Your data in `/data` and `/config` is
 untouched.
+
+### Releases
+
+Releases are created automatically: when the `VERSION` file changes on
+`main`, GitHub Actions builds and pushes the image and publishes a GitHub
+release (tag `vX.Y`, notes from `RELEASE_NOTES.md`). To make a new release,
+bump `VERSION`, update `RELEASE_NOTES.md`, and push.
 
 > The GHCR package must be **public** for the host to pull it without
 > logging in. After the first successful Actions run, go to your GitHub
@@ -186,8 +212,9 @@ The `household` query parameter controls which inventories are counted:
 
 | Field | Meaning |
 |---|---|
-| `total_items` | Number of distinct inventory entries across the selected households |
-| `total_quantity` | Sum of all quantities |
+| `total_items` | **Total quantity** of all items (sum of quantities — the actual number of cans/units in stock) |
+| `total_quantity` | Alias for `total_items` |
+| `total_entries` | Number of distinct inventory rows (entries), regardless of quantity |
 | `expiring_within_1_month` / `_3_months` / `_6_months` | Count of items whose **most urgent** warning level falls in that bucket — an item 2 months from expiry is counted *only* in "Less than 3 months", not in 6 |
 | `expired` | Items past their best-before date |
 | `attention` | Items needing attention (expired or ≤6 months) |
@@ -203,7 +230,7 @@ python3 tracker.py buy "Canned beans" 2028-06-01 --quantity 6
 python3 tracker.py list-products
 python3 tracker.py inventory            # sorted by best-before date
 python3 tracker.py alerts               # current 6/3/1-month warnings
-python3 tracker.py check                # print + desktop notification (cron)
+python3 tracker.py check               # print + desktop notification (cron)
 ```
 
 Environment: `DATA_DIR` (data root, default `./data`) and `HOUSEHOLD`
