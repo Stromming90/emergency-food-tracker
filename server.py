@@ -1,25 +1,17 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.3)
+Emergency Food Storage Tracker — Web UI server (v2.4)
 =====================================================
 Zero-dependency web server (Python stdlib only).
 
-v2.3:
-- Curated emergency-food categories (storage + shelf-life guidance),
-  exposed to the UI and used by the Products setup
-- PUT /api/inventory/<id>: change the quantity of an existing item
-- /api/data now includes the category catalogue
-
-v2.2:
-- Widget: total_items now counts the TOTAL QUANTITY (cans/units), not rows
-- Widget: new total_entries field for the number of distinct inventory rows
-
-v2.1:
-- Global product list (shared by all households; inventory stays per-household)
-- Admins can update products
-- Admins can migrate inventory items between households
-- Settings menu with tabs (users / households / authentication / API key)
-- Widget: multiple or all households, exclusive warning buckets
+v2.4:
+- Product model: type (curated), category (sub-category), size
+- Per-user API keys with regeneration
+- Roles: global admin / household admin / user
+- Household admin: edit product list, migrate inventory, manage users
+  in their households
+- Any user can create a household (becomes its household admin)
+- No implicit 'default' household
 
 Environment variables:
   DATA_DIR   household data root         (default ./data)
@@ -52,52 +44,52 @@ PRODUCTS_CSV = os.path.join(DATA_DIR, "products.csv")   # global product list
 PORT = int(os.environ.get("PORT", "4500"))
 
 ALERT_WINDOWS = {"6months": 180, "3months": 90, "1month": 30}
-PRODUCTS_HEADER = ["name", "manufacturer", "category", "added_date"]
+# v2.4: type + category (sub-category) + size per product
+PRODUCTS_HEADER = ["name", "manufacturer", "type", "category", "size", "added_date"]
 INVENTORY_HEADER = ["id", "product", "manufacturer", "best_before", "quantity", "added_date"]
 
 SESSIONS = {}
 SESSION_TTL = 7 * 24 * 3600
 
-# v2.3: curated emergency-food category catalogue. Products reference a
-# category by its `id` (legacy products may still carry free-text categories).
-EMERGENCY_FOOD_CATEGORIES = [
+# v2.4: curated food TYPES (was "categories" in v2.3). Each type carries
+# suggested sub-categories ("categories") for products.
+FOOD_TYPES = [
     {"id": "dry_staples_carbs", "label": "Dry staples & carbohydrates",
-     "types": ["dry_good"], "storage": "cool_dry", "shelf_life_months": [12, 36],
-     "items": ["pasta", "rice", "couscous", "flour", "oats", "rolled grains",
-               "crispbread", "flatbread", "potato flakes", "muesli", "granola",
-               "porridge oats"]},
+     "storage": "cool_dry", "shelf_life_months": [12, 36],
+     "categories": ["pasta", "rice", "couscous", "flour", "oats", "rolled grains",
+                    "crispbread", "flatbread", "potato flakes", "muesli", "granola",
+                    "porridge oats"]},
     {"id": "canned_ready_foods", "label": "Canned & jarred ready foods",
-     "types": ["canned", "jarred"], "storage": "pantry", "shelf_life_months": [12, 48],
-     "items": ["ravioli", "canned soups", "chili", "stew", "baked beans",
-               "beans in tomato sauce", "chickpeas", "lentils", "corn", "peas",
-               "beetroot", "potatoes", "carrots",
-               "canned fish (tuna, mackerel, sardines, herring)", "canned fruit",
-               "applesauce", "berry purée"]},
+     "storage": "pantry", "shelf_life_months": [12, 48],
+     "categories": ["ravioli", "canned soups", "chili", "stew", "baked beans",
+                    "beans in tomato sauce", "chickpeas", "lentils", "corn", "peas",
+                    "beetroot", "potatoes", "carrots",
+                    "canned fish (tuna, mackerel, sardines, herring)", "canned fruit",
+                    "applesauce", "berry purée"]},
     {"id": "protein_sources", "label": "Protein",
-     "types": ["protein", "canned", "jarred"], "storage": "pantry",
-     "shelf_life_months": [6, 24],
-     "items": ["peanut butter", "nut butters", "nuts", "seeds", "powdered milk",
-               "UHT milk", "plant-based milk", "cured meats (salami, jerky)",
-               "hard cheese (wax/vacuum)", "eggs", "shelf-stable tofu"]},
+     "storage": "pantry", "shelf_life_months": [6, 24],
+     "categories": ["peanut butter", "nut butters", "nuts", "seeds", "powdered milk",
+                    "UHT milk", "plant-based milk", "cured meats (salami, jerky)",
+                    "hard cheese (wax/vacuum)", "eggs", "shelf-stable tofu"]},
     {"id": "fats_cooking", "label": "Fats & cooking",
-     "types": ["fat"], "storage": "cool_dry", "shelf_life_months": [6, 18],
-     "items": ["cooking oil", "olive oil", "butter", "ghee", "hard margarine",
-               "bouillon cubes", "stock powder"]},
+     "storage": "cool_dry", "shelf_life_months": [6, 18],
+     "categories": ["cooking oil", "olive oil", "butter", "ghee", "hard margarine",
+                    "bouillon cubes", "stock powder"]},
     {"id": "seasonings_sweeteners", "label": "Extras & sweeteners",
-     "types": ["seasoning"], "storage": "pantry", "shelf_life_months": [24, 60],
-     "items": ["salt", "sugar", "honey", "jam"]},
+     "storage": "pantry", "shelf_life_months": [24, 60],
+     "categories": ["salt", "sugar", "honey", "jam"]},
     {"id": "beverages", "label": "Beverages",
-     "types": ["beverage"], "storage": "cool_dry", "shelf_life_months": [12, 36],
-     "items": ["coffee", "tea", "cocoa"]},
+     "storage": "cool_dry", "shelf_life_months": [12, 36],
+     "categories": ["coffee", "tea", "cocoa"]},
     {"id": "instant_meals", "label": "Instant meals (just add water)",
-     "types": ["instant_meal"], "storage": "pantry", "shelf_life_months": [12, 36],
-     "items": ["freeze-dried meals", "cup noodles", "instant soups"]},
-    {"id": "snacks_morale", "label": "Snacks & morale",
-     "types": ["snack"], "storage": "cool_dry", "shelf_life_months": [6, 18],
-     "items": ["chocolate", "dried fruit", "salted nuts", "roasted snacks"]},
+     "storage": "pantry", "shelf_life_months": [12, 36],
+     "categories": ["freeze-dried meals", "cup noodles", "instant soups"]},
+    {"id": "snacks", "label": "Snacks",
+     "storage": "cool_dry", "shelf_life_months": [6, 18],
+     "categories": ["chocolate", "dried fruit", "salted nuts", "roasted snacks"]},
     {"id": "supplements", "label": "Supplements",
-     "types": ["supplement"], "storage": "cool_dry", "shelf_life_months": [12, 36],
-     "items": ["multivitamins"]},
+     "storage": "cool_dry", "shelf_life_months": [12, 36],
+     "categories": ["multivitamins"]},
 ]
 
 
@@ -118,7 +110,7 @@ def parse_date(s):
 def slugify(s):
     s = (s or "").strip().lower()
     s = re.sub(r"[^a-z0-9åäö\-_]+", "-", s, flags=re.UNICODE)
-    return s.strip("-") or "default"
+    return s.strip("-")
 
 
 def valid_name(s):
@@ -160,10 +152,6 @@ def write_csv(path, header, rows):
 
 def get_config():
     cfg = load_json(CONFIG_FILE, {})
-    changed = False
-    if "api_key" not in cfg:
-        cfg["api_key"] = secrets.token_urlsafe(24)
-        changed = True
     oidc = cfg.setdefault("oidc", {})
     for env_key, key in (("OIDC_ISSUER", "issuer"), ("OIDC_CLIENT_ID", "client_id"),
                          ("OIDC_CLIENT_SECRET", "client_secret")):
@@ -172,8 +160,7 @@ def get_config():
     if os.environ.get("OIDC_ADMIN_EMAILS"):
         oidc["admin_emails"] = [e.strip() for e in os.environ["OIDC_ADMIN_EMAILS"].split(",") if e.strip()]
     oidc.setdefault("admin_emails", [])
-    if changed:
-        save_json(CONFIG_FILE, cfg)
+    save_json(CONFIG_FILE, cfg)
     return cfg
 
 
@@ -207,8 +194,27 @@ def hash_password(pw, salt=None):
     return salt, digest.hex()
 
 
+def normalize_user(u):
+    """Migrate old user records to the v2.4 role model and ensure an API key."""
+    changed = False
+    if "role" not in u:
+        u["role"] = "global_admin" if u.get("is_admin") else "user"
+        changed = True
+    if "admin_households" not in u:
+        u["admin_households"] = []
+        changed = True
+    if not u.get("api_key"):
+        u["api_key"] = secrets.token_urlsafe(24)
+        changed = True
+    return changed
+
+
 def get_users():
-    return load_json(USERS_FILE, {"users": []})
+    data = load_json(USERS_FILE, {"users": []})
+    changed = any(normalize_user(u) for u in data["users"])
+    if changed:
+        save_json(USERS_FILE, data)
+    return data
 
 
 def save_users(u):
@@ -226,6 +232,13 @@ def find_user(username):
     return None
 
 
+def find_user_by_api_key(key):
+    for u in get_users()["users"]:
+        if hmac.compare_digest(u.get("api_key", ""), key):
+            return u
+    return None
+
+
 def check_password(user, pw):
     try:
         salt, expect = user["password"].split("$", 1)
@@ -235,7 +248,8 @@ def check_password(user, pw):
     return hmac.compare_digest(expect, got)
 
 
-def create_user(username, password, is_admin=False, households=None, oidc_sub=None, email=None):
+def create_user(username, password, role="user", households=None,
+                admin_households=None, oidc_sub=None, email=None):
     if not valid_name(username) or not username.strip():
         raise ValueError("Invalid username.")
     if len(username) > 40:
@@ -244,13 +258,20 @@ def create_user(username, password, is_admin=False, households=None, oidc_sub=No
         raise ValueError("User already exists.")
     if password and len(password) < 8:
         raise ValueError("Password must be at least 8 characters.")
+    if role not in ("user", "global_admin"):
+        raise ValueError("Invalid role.")
+    households = households or []
+    if not households and role != "global_admin":
+        raise ValueError("A user needs at least one household.")
     salt, ph = hash_password(password) if password else ("", "")
     users = get_users()
     users["users"].append({
         "username": username.strip(),
         "password": f"{salt}${ph}" if ph else "",
-        "is_admin": bool(is_admin),
-        "households": households or ["default"],
+        "role": role,
+        "households": households,
+        "admin_households": [h for h in (admin_households or []) if h in households] if role == "user" else [],
+        "api_key": secrets.token_urlsafe(24),
         "oidc_sub": oidc_sub,
         "email": email,
     })
@@ -288,19 +309,44 @@ def require_user(handler):
     return user
 
 
-def require_admin(handler):
+def is_global_admin(user):
+    return user.get("role") == "global_admin"
+
+
+def is_household_admin(user, household):
+    return is_global_admin(user) or household in user.get("admin_households", [])
+
+
+def any_household_admin(user):
+    return is_global_admin(user) or bool(user.get("admin_households"))
+
+
+def require_global_admin(handler):
     user = require_user(handler)
-    if not user.get("is_admin"):
-        raise AuthError("Admin only.")
+    if not is_global_admin(user):
+        raise AuthError("Global admin only.")
+    return user
+
+
+def require_any_household_admin(handler):
+    user = require_user(handler)
+    if not any_household_admin(user):
+        raise AuthError("Household admin only.")
     return user
 
 
 def allowed_household(user, household):
-    return household in user.get("households", []) or user.get("is_admin")
+    return household in user.get("households", []) or is_global_admin(user)
 
 
 def user_households(user):
     return sorted(set(user.get("households", [])))
+
+
+def user_admin_households(user):
+    if is_global_admin(user):
+        return list_households()
+    return sorted(set(user.get("admin_households", [])))
 
 
 # ======================= households =======================
@@ -336,27 +382,25 @@ def ensure_household(household):
         write_csv(path, INVENTORY_HEADER, rows)
 
 
-def ensure_global_products():
-    """Ensure the global products.csv exists; merge any per-household
-    products.csv (from v2.0) into it once."""
-    existing = []
-    if os.path.exists(PRODUCTS_CSV):
-        existing = read_csv(PRODUCTS_CSV)
-    known = {(p["name"].lower(), p.get("manufacturer", "").lower()) for p in existing}
-    changed = False
-    for hh in list_households() or []:
-        old = os.path.join(household_dir(hh), "products.csv")
-        if os.path.exists(old):
-            for p in read_csv(old):
-                key = (p["name"].lower(), p.get("manufacturer", "").lower())
-                if key not in known:
-                    existing.append({h: p.get(h, "") for h in PRODUCTS_HEADER})
-                    known.add(key)
-                    changed = True
-            os.remove(old)
-            changed = True
-    if not os.path.exists(PRODUCTS_CSV) or changed:
-        write_csv(PRODUCTS_CSV, PRODUCTS_HEADER, existing)
+def migrate_products_csv():
+    """v2.3 (category id) -> v2.4 (type + sub-category + size) header."""
+    if not os.path.exists(PRODUCTS_CSV):
+        return
+    with open(PRODUCTS_CSV, newline="", encoding="utf-8") as f:
+        current = next(csv.reader(f), None) or []
+    if current == PRODUCTS_HEADER:
+        return
+    rows = []
+    for p in csv.DictReader(open(PRODUCTS_CSV, newline="", encoding="utf-8")):
+        old = p.get("category", "")
+        if any(t["id"] == old for t in FOOD_TYPES):
+            ftype, category = old, ""      # v2.3 type id -> type
+        else:
+            ftype, category = "", old      # free text -> keep as category
+        rows.append({"name": p.get("name", ""), "manufacturer": p.get("manufacturer", ""),
+                     "type": ftype, "category": category, "size": p.get("size", ""),
+                     "added_date": p.get("added_date", "")})
+    write_csv(PRODUCTS_CSV, PRODUCTS_HEADER, rows)
 
 
 # ======================= model =======================
@@ -374,41 +418,57 @@ def alert_level(best):
     return "ok"
 
 
-def add_product(name, manufacturer, category):
-    name, manufacturer, category = name.strip(), (manufacturer or "").strip(), (category or "").strip()
+def add_product(name, manufacturer, ftype, category, size):
+    name = name.strip()
+    manufacturer = (manufacturer or "").strip()
+    ftype = (ftype or "").strip()
+    category = (category or "").strip()
+    size = (size or "").strip()
     if not name:
         raise ValueError("Product name is required.")
-    if not valid_name(name) or not valid_name(manufacturer) or not valid_name(category):
-        raise ValueError("Product/manufacturer/category contains invalid characters.")
+    for field in (name, manufacturer, category, size):
+        if not valid_name(field):
+            raise ValueError("Product fields contain invalid characters.")
+    if ftype and not any(t["id"] == ftype for t in FOOD_TYPES):
+        raise ValueError("Unknown type.")
     products = read_csv(PRODUCTS_CSV)
     if any(p["name"].lower() == name.lower()
            and p.get("manufacturer", "").lower() == manufacturer.lower()
            for p in products):
         raise ValueError(f"'{name}' by '{manufacturer or 'unknown maker'}' is already on the list.")
-    products.append({"name": name, "manufacturer": manufacturer, "category": category,
+    products.append({"name": name, "manufacturer": manufacturer, "type": ftype,
+                     "category": category, "size": size,
                      "added_date": today().isoformat()})
     products.sort(key=lambda p: (p["name"].lower(), p.get("manufacturer", "").lower()))
     write_csv(PRODUCTS_CSV, PRODUCTS_HEADER, products)
 
 
-def update_product(old_name, old_manufacturer, name, manufacturer, category):
-    """Admin: update a product globally, updating all household inventories."""
+def update_product(old_name, old_manufacturer, name, manufacturer, ftype, category, size):
+    """Update a product globally, updating all household inventories."""
     products = read_csv(PRODUCTS_CSV)
     old_key = (old_name.strip().lower(), (old_manufacturer or "").strip().lower())
     match = next((p for p in products
                   if (p["name"].lower(), p.get("manufacturer", "").lower()) == old_key), None)
     if not match:
         raise ValueError("Product not found.")
-    name, manufacturer, category = name.strip(), (manufacturer or "").strip(), (category or "").strip()
+    name = name.strip()
+    manufacturer = (manufacturer or "").strip()
+    ftype = (ftype or "").strip()
+    category = (category or "").strip()
+    size = (size or "").strip()
     if not name:
         raise ValueError("Product name is required.")
-    if not valid_name(name) or not valid_name(manufacturer) or not valid_name(category):
-        raise ValueError("Product/manufacturer/category contains invalid characters.")
+    for field in (name, manufacturer, category, size):
+        if not valid_name(field):
+            raise ValueError("Product fields contain invalid characters.")
+    if ftype and not any(t["id"] == ftype for t in FOOD_TYPES):
+        raise ValueError("Unknown type.")
     new_key = (name.lower(), manufacturer.lower())
     if new_key != old_key and any((p["name"].lower(), p.get("manufacturer", "").lower()) == new_key
                                   for p in products):
         raise ValueError(f"'{name}' by '{manufacturer or 'unknown maker'}' already exists.")
-    match.update({"name": name, "manufacturer": manufacturer, "category": category})
+    match.update({"name": name, "manufacturer": manufacturer, "type": ftype,
+                  "category": category, "size": size})
     products.sort(key=lambda p: (p["name"].lower(), p.get("manufacturer", "").lower()))
     write_csv(PRODUCTS_CSV, PRODUCTS_HEADER, products)
     # update references in every household inventory
@@ -476,7 +536,7 @@ def remove_item(household, item_id):
 
 
 def update_quantity(household, item_id, quantity):
-    """v2.3: change the quantity of an existing inventory item."""
+    """Change the quantity of an existing inventory item."""
     ensure_household(household)
     inv_path = os.path.join(household_dir(household), "inventory.csv")
     try:
@@ -495,7 +555,7 @@ def update_quantity(household, item_id, quantity):
 
 
 def migrate_items(from_hh, to_hh, item_ids=None):
-    """Admin: move all (or selected) inventory items from one household to another."""
+    """Move all (or selected) inventory items from one household to another."""
     ensure_household(from_hh)
     ensure_household(to_hh)
     src = os.path.join(household_dir(from_hh), "inventory.csv")
@@ -552,11 +612,7 @@ def send_redirect(handler, location, set_cookie=None):
 
 def widget_response(households):
     """Aggregated widget data across the given households.
-    Warning buckets are exclusive: an item only counts in its most
-    relevant bucket.
-
-    v2.2: total_items is the TOTAL QUANTITY (sum of all units), not the
-    number of inventory rows. total_entries keeps the old row count."""
+    Warning buckets are exclusive. total_items = total quantity (units)."""
     households = [h for h in households if h]
     entries = 0
     quantities = 0
@@ -581,9 +637,9 @@ def widget_response(households):
     expiring.sort(key=lambda r: r["days_left"])
     return {
         "households": households,
-        "total_items": quantities,        # total quantity (units), v2.2
-        "total_quantity": quantities,     # alias, same value
-        "total_entries": entries,        # number of distinct inventory rows
+        "total_items": quantities,
+        "total_quantity": quantities,
+        "total_entries": entries,
         "expiring_within_1_month": counts["1month"],
         "expiring_within_3_months": counts["3months"],
         "expiring_within_6_months": counts["6months"],
@@ -598,6 +654,16 @@ def widget_response(households):
                    + f" (best before {r['best_before']})"
                    for r in expiring[:10]],
     }
+
+
+def user_public(user):
+    return {"username": user["username"],
+            "role": user.get("role", "user"),
+            "is_admin": is_global_admin(user),          # convenience for the UI
+            "households": user.get("households", []),
+            "admin_households": user.get("admin_households", []),
+            "email": user.get("email", ""),
+            "oidc": bool(user.get("oidc_sub"))}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -648,22 +714,23 @@ class Handler(BaseHTTPRequestHandler):
                     self.reply(200, f.read(), "text/html; charset=utf-8")
             elif path == "/api/bootstrap":
                 user = current_user(self)
-                cfg = get_config()
+                get_config()
                 self.reply(200, {
                     "configured": user_count() > 0,
                     "oidc_enabled": oidc_enabled(),
-                    "oidc_name": cfg["oidc"].get("issuer", "").rstrip("/").split("//")[-1],
-                    "version": "2.3",
-                    "user": (dict(username=user["username"],
-                                  is_admin=user.get("is_admin", False),
-                                  households=user_households(user)) if user else None),
+                    "oidc_name": get_config()["oidc"].get("issuer", "").rstrip("/").split("//")[-1],
+                    "version": "2.4",
+                    "user": ({**user_public(user),
+                              "api_key": user.get("api_key", ""),
+                              "visible_households": user_households(user) if not is_global_admin(user)
+                              else list_households()} if user else None),
                 })
             elif path == "/api/data":
                 user = require_user(self)
                 h = self.household_of(user)
-                self.reply(200, {"products": products_view(),   # global
+                self.reply(200, {"products": products_view(),
                                  "inventory": inventory_view(h),
-                                 "categories": EMERGENCY_FOOD_CATEGORIES,
+                                 "types": FOOD_TYPES,
                                  "today": today().isoformat(),
                                  "household": h,
                                  "households": list_households()})
@@ -685,22 +752,32 @@ class Handler(BaseHTTPRequestHandler):
                 send_redirect(self, eps["authorize"] + "?" + params)
             elif path == "/api/oidc/callback":
                 self.oidc_callback(qs)
-            # ---------- admin listings ----------
+            # ---------- users / roles listings ----------
             elif path == "/api/admin/users":
-                require_admin(self)
-                self.reply(200, {"users": [
-                    {"username": u["username"], "is_admin": u.get("is_admin", False),
-                     "households": u.get("households", []), "email": u.get("email", ""),
-                     "oidc": bool(u.get("oidc_sub"))}
-                    for u in get_users()["users"]]})
+                user = require_user(self)
+                if is_global_admin(user):
+                    visible = get_users()["users"]
+                elif user.get("admin_households"):
+                    mine = set(user["admin_households"])
+                    visible = [u for u in get_users()["users"]
+                               if mine & set(u.get("households", []))]
+                else:
+                    raise AuthError("Household admin only.")
+                self.reply(200, {"users": [user_public(u) for u in visible],
+                                 "viewer_role": user.get("role"),
+                                 "viewer_admin_households": user_admin_households(user),
+                                 "all_households": list_households()})
             elif path == "/api/admin/households":
-                require_admin(self)
-                self.reply(200, {"households": list_households()})
+                user = require_user(self)
+                if is_global_admin(user):
+                    households = list_households()
+                else:
+                    households = [h for h in user_households(user) if h in list_households()]
+                self.reply(200, {"households": households})
             elif path == "/api/admin/config":
-                require_admin(self)
+                require_global_admin(self)
                 oidc = get_config()["oidc"]
-                self.reply(200, {"api_key": get_config()["api_key"],
-                                 "oidc": {k: oidc.get(k, "")
+                self.reply(200, {"oidc": {k: oidc.get(k, "")
                                           for k in ("issuer", "client_id", "client_secret",
                                                     "redirect_uri", "scopes", "admin_emails")},
                                  "oidc_auto_create": oidc.get("auto_create", True),
@@ -708,18 +785,25 @@ class Handler(BaseHTTPRequestHandler):
             # ---------- homepage widget ----------
             elif path == "/api/widget":
                 key = qs.get("key", [""])[0]
-                cfg = get_config()
-                if not hmac.compare_digest(key, cfg.get("api_key", "")):
+                owner = find_user_by_api_key(key)
+                if not owner:
                     self.reply(401, {"error": "invalid key"})
                     return
                 raw = qs.get("household", ["all"])[0] or "all"
-                if raw.lower() in ("all", "*"):
-                    households = list_households()
+                all_hh = list_households()
+                if is_global_admin(owner):
+                    accessible = all_hh
                 else:
-                    households = [slugify(h) for h in raw.split(",") if h.strip()]
-                    unknown = [h for h in households if h not in list_households()]
+                    accessible = [h for h in owner.get("households", []) if h in all_hh]
+                if raw.lower() in ("all", "*"):
+                    households = accessible
+                else:
+                    wanted = [slugify(h) for h in raw.split(",") if h.strip()]
+                    households = [h for h in wanted if h in accessible]
+                    unknown = [h for h in wanted if h not in accessible]
                     if not households or unknown:
-                        raise ValueError(f"Unknown household(s): {', '.join(unknown) or '(none)'}")
+                        raise ValueError(f"Unknown or forbidden household(s): "
+                                         f"{', '.join(unknown) or '(none)'}")
                 self.reply(200, widget_response(households))
             else:
                 self.reply(404, {"error": "not found"})
@@ -761,8 +845,13 @@ class Handler(BaseHTTPRequestHandler):
             if oidc.get("auto_create") is False:
                 raise ValueError("OIDC user not known; ask an admin to create your account.")
             is_admin = email in (oidc.get("admin_emails") or [])
-            create_user(username, "", is_admin=is_admin,
-                        households=["default"], oidc_sub=info.get("sub"), email=email)
+            role = "global_admin" if is_admin else "user"
+            households = list_households()[:1]
+            if role == "user" and not households:
+                raise ValueError("No household exists yet; ask an admin to create one first.")
+            create_user(username, "", role=role, households=households,
+                        admin_households=households if role == "user" else [],
+                        oidc_sub=info.get("sub"), email=email)
             user = find_user(username)
         token = create_session(user["username"])
         send_redirect(self, "/", self.session_cookie(token))
@@ -778,9 +867,12 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("Setup already done.")
                 if not body.get("username") or not body.get("password"):
                     raise ValueError("Username and password required.")
-                hh = slugify(body.get("household") or "default")
+                hh = slugify(body.get("household") or "")
+                if not hh:
+                    raise ValueError("Please name your first household.")
                 ensure_household(hh)
-                create_user(body["username"], body["password"], is_admin=True, households=[hh])
+                create_user(body["username"], body["password"], role="global_admin",
+                            households=[hh])
                 token = create_session(body["username"].strip())
                 self.reply(200, {"ok": True}, set_cookie=self.session_cookie(token))
             elif path == "/api/login":
@@ -794,11 +886,12 @@ class Handler(BaseHTTPRequestHandler):
                 if cookie.get("session"):
                     SESSIONS.pop(cookie["session"].value, None)
                 self.reply(200, {"ok": True}, set_cookie=self.session_cookie("", clear=True))
-            # -------- products (global) --------
+            # -------- products (global; household admins & up) --------
             elif path == "/api/products":
-                require_user(self)
+                require_any_household_admin(self)
                 add_product(body.get("name", ""), body.get("manufacturer", ""),
-                            body.get("category", ""))
+                            body.get("type", ""), body.get("category", ""),
+                            body.get("size", ""))
                 self.reply(201, {"ok": True})
             elif path == "/api/buy":
                 user = require_user(self)
@@ -806,40 +899,77 @@ class Handler(BaseHTTPRequestHandler):
                     body.get("manufacturer", ""), body.get("best_before", ""),
                     body.get("quantity", 1))
                 self.reply(201, {"ok": True})
-            # -------- admin --------
+            # -------- me --------
+            elif path == "/api/me/apikey":
+                user = require_user(self)
+                users = get_users()
+                target = next(u for u in users["users"]
+                              if u["username"] == user["username"])
+                target["api_key"] = secrets.token_urlsafe(24)
+                save_users(users)
+                self.reply(200, {"ok": True, "api_key": target["api_key"]})
+            # -------- users / households admin --------
             elif path == "/api/admin/users":
-                require_admin(self)
+                requester = require_user(self)
                 if not body.get("username") or not body.get("password"):
                     raise ValueError("Username and password required.")
-                households = [slugify(h) for h in body.get("households", []) or ["default"]]
+                households = [slugify(h) for h in body.get("households", []) if slugify(h)]
+                if not households:
+                    raise ValueError("A new user needs at least one household.")
                 for hh in households:
                     ensure_household(hh)
-                create_user(body["username"], body["password"],
-                            is_admin=bool(body.get("is_admin")), households=households)
+                if is_global_admin(requester):
+                    role = "global_admin" if body.get("role") == "global_admin" else "user"
+                    admin_hh = [h for h in (body.get("admin_households") or []) if h in households]
+                elif requester.get("admin_households"):
+                    role = "user"
+                    admin_hh = [h for h in households if h in requester["admin_households"]]
+                    if not set(households) <= set(requester["admin_households"]):
+                        raise AuthError("You can only create users in households you admin.")
+                else:
+                    raise AuthError("Household admin only.")
+                create_user(body["username"], body["password"], role=role,
+                            households=households,
+                            admin_households=admin_hh if role == "user" else [])
                 self.reply(201, {"ok": True})
             elif path == "/api/admin/households":
-                require_admin(self)
+                # Any logged-in user may create a household and becomes its
+                # household admin. Global admins may assign other users too.
+                user = require_user(self)
                 hh = slugify(body.get("name", ""))
+                if not hh:
+                    raise ValueError("Please give the household a name.")
+                if hh in list_households():
+                    raise ValueError(f"Household '{hh}' already exists.")
                 ensure_household(hh)
-                # optionally assign existing users to the new household
+                users = get_users()
+                me = next(u for u in users["users"] if u["username"] == user["username"])
+                if hh not in me.get("households", []):
+                    me.setdefault("households", []).append(hh)
+                if me.get("role") != "global_admin" and hh not in me.get("admin_households", []):
+                    me.setdefault("admin_households", []).append(hh)
+                assigned = []
                 for uname in body.get("users", []) or []:
-                    users = get_users()
                     target = next((u for u in users["users"]
                                    if u["username"].lower() == str(uname).lower()), None)
-                    if target and hh not in target.get("households", []):
-                        target.setdefault("households", []).append(hh)
-                        save_users(users)
-                self.reply(201, {"ok": True, "household": hh})
+                    if target:
+                        if hh not in target.get("households", []):
+                            target.setdefault("households", []).append(hh)
+                        assigned.append(target["username"])
+                save_users(users)
+                self.reply(201, {"ok": True, "household": hh, "assigned": assigned})
             elif path == "/api/admin/migrate":
-                admin = require_admin(self)
+                user = require_user(self)
                 frm = slugify(body.get("from", ""))
                 to = slugify(body.get("to", ""))
                 if frm == to:
                     raise ValueError("Source and target household must differ.")
+                if not is_household_admin(user, frm):
+                    raise AuthError("You are not the admin of the source household.")
                 moved = migrate_items(frm, to, body.get("item_ids"))
                 self.reply(200, {"ok": True, "moved": moved})
             elif path == "/api/admin/oidc":
-                require_admin(self)
+                require_global_admin(self)
                 cfg = get_config()
                 oidc = cfg["oidc"]
                 for k in ("issuer", "client_id", "client_secret", "redirect_uri", "scopes"):
@@ -866,42 +996,73 @@ class Handler(BaseHTTPRequestHandler):
             body = self.read_body()
             m = re.fullmatch(r"/api/inventory/(\d+)", path)
             if m:
-                # v2.3: change the quantity of an existing inventory item
                 user = require_user(self)
                 update_quantity(self.household_of(user, body), m.group(1),
-                                 body.get("quantity"))
+                                body.get("quantity"))
                 self.reply(200, {"ok": True})
                 return
             if path == "/api/products":
-                # admin: update a product globally
-                require_admin(self)
+                require_any_household_admin(self)
                 update_product(body.get("old_name", ""), body.get("old_manufacturer", ""),
                                body.get("name", ""), body.get("manufacturer", ""),
-                               body.get("category", ""))
+                               body.get("type", ""), body.get("category", ""),
+                               body.get("size", ""))
                 self.reply(200, {"ok": True})
             elif path == "/api/admin/users":
-                # admin: update user (admin flag, households, password)
-                require_admin(self)
+                requester = require_user(self)
                 uname = body.get("username", "")
                 users = get_users()
                 target = next((u for u in users["users"]
                                if u["username"].lower() == uname.lower()), None)
                 if not target:
                     raise ValueError("User not found.")
-                if "is_admin" in body:
-                    target["is_admin"] = bool(body["is_admin"])
-                if isinstance(body.get("households"), list):
-                    households = [slugify(h) for h in body["households"]]
-                    if not households:
-                        raise ValueError("A user needs at least one household.")
-                    for hh in households:
-                        ensure_household(hh)
-                    target["households"] = households
-                if body.get("password"):
-                    if len(body["password"]) < 8:
-                        raise ValueError("Password must be at least 8 characters.")
-                    salt, ph = hash_password(body["password"])
-                    target["password"] = f"{salt}${ph}"
+                if is_global_admin(requester):
+                    if "role" in body:
+                        if body["role"] not in ("user", "global_admin"):
+                            raise ValueError("Invalid role.")
+                        target["role"] = body["role"]
+                    if isinstance(body.get("households"), list):
+                        households = [slugify(h) for h in body["households"] if slugify(h)]
+                        if not households and target["role"] != "global_admin":
+                            raise ValueError("A user needs at least one household.")
+                        for hh in households:
+                            ensure_household(hh)
+                        target["households"] = households
+                        target["admin_households"] = [h for h in target.get("admin_households", [])
+                                                      if h in households]
+                    if isinstance(body.get("admin_households"), list):
+                        target["admin_households"] = [h for h in body["admin_households"]
+                                                      if h in target.get("households", [])]
+                    if body.get("password"):
+                        if len(body["password"]) < 8:
+                            raise ValueError("Password must be at least 8 characters.")
+                        salt, ph = hash_password(body["password"])
+                        target["password"] = f"{salt}${ph}"
+                elif requester.get("admin_households"):
+                    mine = set(requester["admin_households"])
+                    # household admin: manage users within their households only
+                    if isinstance(body.get("households"), list):
+                        wanted = [slugify(h) for h in body["households"] if slugify(h)]
+                        current = set(target.get("households", []))
+                        additions = [h for h in wanted if h not in current and h in mine]
+                        removals = [h for h in current - set(wanted) if h in mine]
+                        hh_set = (current - set(removals)) | set(additions)
+                        target["households"] = sorted(hh_set)
+                        target["admin_households"] = [h for h in target.get("admin_households", [])
+                                                      if h in hh_set]
+                        for hh in additions:
+                            ensure_household(hh)
+                    if isinstance(body.get("admin_households"), list):
+                        wanted = set(body["admin_households"]) & mine & set(target.get("households", []))
+                        target["admin_households"] = sorted(
+                            (set(target.get("admin_households", [])) - mine) | wanted)
+                    if body.get("password"):
+                        if len(body["password"]) < 8:
+                            raise ValueError("Password must be at least 8 characters.")
+                        salt, ph = hash_password(body["password"])
+                        target["password"] = f"{salt}${ph}"
+                else:
+                    raise AuthError("Household admin only.")
                 save_users(users)
                 self.reply(200, {"ok": True})
             else:
@@ -926,16 +1087,14 @@ class Handler(BaseHTTPRequestHandler):
                 return
             m = re.fullmatch(r"/api/products/(.+)", path)
             if m:
-                h = qs.get("household", [None])[0]
-                if h is not None and not allowed_household(user, h):
-                    raise AuthError(f"No access to household '{h}'.")
+                require_any_household_admin(self)
                 remove_product(urllib.parse.unquote(m.group(1)),
                                qs.get("manufacturer", [None])[0])
                 self.reply(200, {"ok": True})
                 return
             m = re.fullmatch(r"/api/admin/users/(.+)", path)
             if m:
-                require_admin(self)
+                require_global_admin(self)
                 uname = urllib.parse.unquote(m.group(1))
                 if uname.lower() == user["username"].lower():
                     raise ValueError("You cannot delete your own account.")
@@ -949,13 +1108,14 @@ class Handler(BaseHTTPRequestHandler):
                 return
             m = re.fullmatch(r"/api/admin/households/([^/]+)", path)
             if m:
-                require_admin(self)
+                require_global_admin(self)
                 hh = m.group(1)
-                # remove household from users
                 users = get_users()
                 for u in users["users"]:
                     if hh in u.get("households", []):
-                        u["households"] = [x for x in u["households"] if x != hh] or ["default"]
+                        u["households"] = [x for x in u["households"] if x != hh]
+                        u["admin_households"] = [x for x in u.get("admin_households", [])
+                                                 if x != hh]
                 save_users(users)
                 import shutil
                 shutil.rmtree(household_dir(hh), ignore_errors=True)
@@ -982,13 +1142,14 @@ def main():
                 os.remove(old)
             else:
                 os.replace(old, new)
-    # ensure 'default' household exists, merge per-household products (v2.0 -> v2.1)
-    ensure_household("default")
-    ensure_global_products()
-    cfg = get_config()
-    print(f"Homepage widget key: {cfg['api_key']}")
+    # v2.3 category column -> v2.4 type/category/size columns
+    migrate_products_csv()
+    if not os.path.exists(PRODUCTS_CSV):
+        write_csv(PRODUCTS_CSV, PRODUCTS_HEADER, [])
+    get_users()   # normalizes roles + generates per-user API keys
+    get_config()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.3: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v2.4: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 

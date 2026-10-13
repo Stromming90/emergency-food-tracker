@@ -12,87 +12,35 @@ including TrueNAS.
 
 ## Features
 
-- 📋 **Global product list** — name, manufacturer, category; extend any time.
-  The list is shared by **all households**: a product added by one household
-  is immediately available to everyone.
-- 🗂️ **Curated emergency-food categories** — the Products tab is built around
-  nine categories (dry staples & carbohydrates, canned & jarred ready foods,
-  protein, fats & cooking, extras & sweeteners, beverages, instant meals,
-  snacks & morale, supplements), each with typical storage and shelf-life
-  guidance and a list of suggested items you can add with one click.
-- ✏️ **Admin product editing** — admins can edit all product fields (name,
-  manufacturer, category) from a proper edit dialog; changes propagate to
-  every household's inventory.
-- 🛒 **Purchases** — per product + manufacturer, with best-before date &
-  quantity; the product picker can be filtered by category and suggests a
-  best-before date from the category's typical shelf life.
-- ♻️ **Editable quantities** — change the quantity of an inventory item
-  directly in the table.
-- ⏰ **Expiry alerts** — colour-coded badges: fine · Less than 6 months ·
-  Less than 3 months · Less than 1 month · expired (page auto-refreshes every
-  minute). Each item shows only its **most urgent** warning level.
-- 🔍 **Filter & sort** — both the inventory and the product list can be
-  filtered by text and (for the inventory) by expiry status, and sorted by
-  clicking any column header.
-- 👤 **User accounts** — first visit creates the admin account; sessions last
-  7 days (PBKDF2-hashed passwords, HttpOnly cookies)
+- 📋 **Global product list** — the list is shared by all households. Each
+  product has a type, a category, a manufacturer and a size (g/ml).
+- 🗂️ **Curated emergency-food categories** — the Products tab is built
+  around nine types (dry staples & carbohydrates, canned & jarred ready
+  foods, protein, fats & cooking, extras & sweeteners, beverages, instant
+  meals, snacks, supplements), each with typical storage and shelf-life
+  guidance and suggested sub-categories.
+- ⏰ **Expiry alerts** — colour-coded badges: Fine · Less than 6 months ·
+  Less than 3 months · Less than 1 month · Expired. The badges double as
+  filters: click one to show only items in that state.
 - 🏠 **Households** — separate inventories per household; users can belong
-  to several and switch between them via the labelled top bar dropdown.
-  Inventories can be **migrated** to other households (Settings → Households).
-- 🌙 **Dark mode** — auto (follows your device), light or dark, per browser
-- 🔑 **OIDC / SSO** — login via Keycloak (or any OIDC provider), optional
-  auto-provisioning of unknown users, admin-by-email whitelist
-- 📊 **gethomepage widget** — JSON API with API key showing expiry counts,
-  per household or across all households
+  to several and switch between them.
+- 👤 **Roles** — global admins can do and see everything; household admins
+  can edit the product list, migrate inventory and manage the users of the
+  households they administer.
+- 🌙 **Dark mode** — for your comfort
+- 🔑 **OIDC / SSO** — login via Keycloak, Authentik or Authelia (or any
+  OIDC provider), optional auto-provisioning of unknown users,
+  admin-by-email whitelist
+- 📊 **gethomepage widget** — JSON API with a personal API key showing
+  expiry counts, per household or across all households
 - 💻 **CLI** — same data as the web app, handy for cron/scripts
-
-## The web UI
-
-The app is organised into two main tabs:
-
-- **🏠 Household** — *Record a purchase* at the top (with a category filter
-  for the product picker), your **Inventory** below. Filter by
-  product/manufacturer text or by expiry status, click any column header
-  (Product, Qty, Best before, Days, Status) to sort, and edit an item's
-  quantity inline. To remove an item, use its ✕ button.
-- **📋 Products** — the global product list, set up from curated categories:
-  pick a category to see its storage & shelf-life guidance and click
-  suggested items to add them (already-added items are ticked). A manual add
-  form and the full product table (filter, sort, admin edit/remove) are
-  below. Removing a product from the list never deletes existing inventory
-  items.
-
-Settings (⚙️, admins only) are organised in tabs: Users / Households /
-Authentication / API key.
-
-### Product categories
-
-Products are organised into nine curated emergency-food categories:
-
-| Category | Typical storage | Shelf life |
-|---|---|---|
-| Dry staples & carbohydrates | cool & dry | 1–3 years |
-| Canned & jarred ready foods | pantry | 1–4 years |
-| Protein | pantry | 6–24 months |
-| Fats & cooking | cool & dry | 6–18 months |
-| Extras & sweeteners | pantry | 2–5 years |
-| Beverages | cool & dry | 1–3 years |
-| Instant meals (just add water) | pantry | 1–3 years |
-| Snacks & morale | cool & dry | 6–18 months |
-| Supplements | cool & dry | 1–3 years |
-
-Each category ships with suggested items (pasta, rice, canned fish,
-peanut butter, …) that you can add to your product list with one click.
-The category's shelf-life range is also used to suggest a best-before
-date when recording a purchase. Products created before v2.3 with
-free-text categories keep working and remain editable.
 
 ## Run with Docker
 
 The project publishes a prebuilt image to GitHub Container Registry —
 every push to `main` triggers a GitHub Actions build automatically
 (see `.github/workflows/docker-publish.yml`). The image is tagged `latest`
-and with the current release version (e.g. `v2.3`).
+and with the current release version (e.g. `v2.4`).
 
 ```yaml
 services:
@@ -112,25 +60,8 @@ services:
 Adjust the volume paths to your host. `docker compose up -d`, then open
 `http://<host>:4500`.
 
-### Updating to a new version
-
-Because the app runs from a prebuilt image, updating is the same as with any
-Docker app — no rebuild from source:
-
-```bash
-docker compose pull && docker compose up -d
-```
-
-In Dockge: open the stack → **Pull images** (or edit → **Deploy**) and the
-new version is fetched and started. Your data in `/data` and `/config` is
-untouched.
-
-### Releases
-
-Releases are created automatically: when the `VERSION` file changes on
-`main`, GitHub Actions builds and pushes the image and publishes a GitHub
-release (tag `vX.Y`, notes from `RELEASE_NOTES.md`). To make a new release,
-bump `VERSION`, update `RELEASE_NOTES.md`, and push.
+In Dockge: open the stack → **Pull images** (or edit → **Deploy**) to
+update. Your data in `/data` and `/config` is untouched.
 
 > The GHCR package must be **public** for the host to pull it without
 > logging in. After the first successful Actions run, go to your GitHub
@@ -148,24 +79,32 @@ If you prefer building from source instead of the registry image, replace
 
 — and rebuild with `docker compose build --pull --no-cache` on updates.
 
-**First visit:** you're asked to create the **admin account** (and can name
-your first household, e.g. "home"). After that, the login screen has a
-username/password form (and an SSO button once OIDC is configured).
+### Getting started
+
+**First visit:** you're asked to create the **global admin account** and
+your **first household** — name it something like "home". After that, the
+login screen has a username/password form (and an SSO button once OIDC is
+configured).
+
+Other users are created in Settings → Users (by a global admin, or by a
+household admin for their own households). Any user can create additional
+households in Settings → Households — the creator automatically becomes
+the household admin of the new household.
 
 ### Volumes
 
 | Mount | Contents |
 |---|---|
 | `/data` | `products.csv` (global product list), `households/<name>/inventory.csv` |
-| `/config` | `users.json` (accounts), `config.json` (widget API key, OIDC settings) |
+| `/config` | `users.json` (accounts, roles, API keys), `config.json` (OIDC settings) |
 
 Your data lives in plain CSV files — a backup is just a copy of the folder.
 TrueNAS snapshot tasks on the data dataset work great.
 
 > **Migration:** upgrading from an older version is automatic on first
 > start — the flat pre-household layout moves into `households/default/`,
-> and v2.0 per-household product lists are merged into the new global
-> `products.csv`. Existing data is preserved.
+> v2.0 per-household product lists are merged into the global
+> `products.csv`, and old user flags are converted to the new roles.
 
 ### Environment variables
 
@@ -176,7 +115,7 @@ TrueNAS snapshot tasks on the data dataset work great.
 | `CONFIG_DIR` | `/config` | Users & settings |
 | `OIDC_ISSUER` | — | e.g. `https://keycloak.example/realms/home` |
 | `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | — | OIDC client credentials |
-| `OIDC_ADMIN_EMAILS` | — | Comma-separated emails that become admin on SSO login |
+| `OIDC_ADMIN_EMAILS` | — | Comma-separated emails that become global admin on SSO login |
 
 OIDC can also be configured in the settings UI (⚙️) — the UI settings are
 stored in `/config` and win over env vars only if set after startup.
@@ -188,34 +127,66 @@ stored in `/config` and win over env vars only if set after startup.
    (or run it in Dockge: **+ Compose** → paste → Deploy)
 3. Open `http://<truenas-ip>:4500`
 
-## Settings (⚙️)
+## The web UI
 
-Visible to admins only, organised in tabs:
+The app is organised into two main tabs:
 
-- **Users** — create users (with password and household checkboxes), toggle
-  admin, edit a user's households via checkboxes, delete users
-- **Households** — create households (optionally assigning existing users
-  from a checkbox list), delete households, and **migrate inventory**
-  (move all items from one household to another)
-- **Authentication** — OIDC / SSO: issuer URL, client ID/secret, redirect
-  URI (auto-detected if blank), admin emails, auto-create toggle
-- **API key** — the API key for the gethomepage widget endpoint
+- **🏠 Household** — *Record a purchase* at the top: filter the product
+  picker by **type** (each type in the dropdown shows how many products
+  are available), pick a product, best-before date and quantity; a
+  best-before date is suggested from the type's typical shelf life. Your
+  **Inventory** is below: filter by text, click a coloured status badge
+  (Fine · Less than 6 months · Less than 3 months · Less than 1 month ·
+  Expired, or All) to filter by state, and click any column header to
+  sort. Quantities are changed deliberately via a ✎ button — no
+  accidental edits. To remove an item, use its ✕ button.
+- **📋 Products** — add products with type, category, product name,
+  manufacturer and size (g/ml); category suggestions come from the chosen
+  type. The product table (filter, sort, edit/remove for admins) shows
+  Type, Category and Size. Removing a product never deletes existing
+  inventory items.
 
-## OIDC / SSO (Keycloak)
+Settings (⚙️) are organised in tabs: General (overview), Users,
+Households, Authentication (global admin) and API Key.
 
-1. In Keycloak, create a **confidential** client with *Standard Flow* enabled
-2. Valid redirect URI: `http://<tracker-host>:4500/api/oidc/callback`
-3. In Settings → Authentication, set the issuer (realm URL), client ID and secret
-4. Save — the "Log in with SSO" button appears on the login screen
+### Product types
 
-Endpoints are discovered automatically from the issuer's
-`/.well-known/openid-configuration`. With **auto-create** enabled (default),
-unknown SSO users get a normal account on first login; list their emails in
-*admin emails* to grant admin.
+Products are organised into nine curated types, each with suggested
+categories:
+
+| Type | Typical storage | Shelf life |
+|---|---|---|
+| Dry staples & carbohydrates | cool & dry | 1–3 years |
+| Canned & jarred ready foods | pantry | 1–4 years |
+| Protein | pantry | 6–24 months |
+| Fats & cooking | cool & dry | 6–18 months |
+| Extras & sweeteners | pantry | 2–5 years |
+| Beverages | cool & dry | 1–3 years |
+| Instant meals (just add water) | pantry | 1–3 years |
+| Snacks | cool & dry | 6–18 months |
+| Supplements | cool & dry | 1–3 years |
+
+The type's shelf-life range is used to suggest a best-before date when
+recording a purchase.
+
+## Roles
+
+- **Global admin** — the general admin role for the application with
+  access to do and see everything: all households and inventories, users,
+  households, product list, OIDC settings.
+- **Household admin** — can edit the product list, migrate inventory
+  between households and manage users of the households they administer:
+  create accounts in those households, reset passwords, and grant or
+  revoke household-admin rights. Household admins can make other users
+  household admins of their households.
+- **User** — records purchases and manages the inventory of their own
+  households; can create new households (becoming that household's admin)
+  and has a personal API key.
 
 ## gethomepage widget
 
-Get your API key from Settings → API key, then in homepage's `services.yaml`:
+Get your personal API key from Settings → API Key, then in homepage's
+`services.yaml`:
 
 ```yaml
 - Food Storage:
@@ -242,9 +213,13 @@ Get your API key from Settings → API key, then in homepage's `services.yaml`:
 
 The `household` query parameter controls which inventories are counted:
 
-- `household=all` — all households (default)
+- `household=all` — all households you have access to (default)
 - `household=default` — a single household (use the slug, e.g. lowercase)
 - `household=home,cabin` — a comma-separated list of households
+
+Each user has their own unique API key (regenerable in Settings → API
+Key); the widget only reports the households that user has access to.
+Global admins see all households.
 
 ### Response fields
 
@@ -260,35 +235,67 @@ The `household` query parameter controls which inventories are counted:
 | `next_expiries` | Next 10 items with product, best-before date, days left and level |
 | `alerts` | Human-readable alert strings, one per item |
 
-## CLI
+## OIDC / SSO
 
-```bash
-python3 tracker.py add-product "Canned beans" --manufacturer "Example Foods" --category Canned
-python3 tracker.py buy "Canned beans" 2028-06-01 --quantity 6
-python3 tracker.py list-products
-python3 tracker.py inventory            # sorted by best-before date
-python3 tracker.py alerts               # current 6/3/1-month warnings
-python3 tracker.py check               # print + desktop notification (cron)
+### Keycloak
+
+1. Create a **confidential** client with *Standard Flow* enabled
+2. Valid redirect URI: `http://<tracker-host>:4500/api/oidc/callback`
+3. In Settings → Authentication, set the issuer (realm URL, e.g.
+   `https://keycloak.example/realms/home`), client ID and secret
+4. Save — the "Log in with SSO" button appears on the login screen
+
+### Authentik
+
+1. Create a new **OAuth2 provider**; under *Protocol settings* choose
+   *Authorization code* flow
+2. Redirect URI / Origins: `http://<tracker-host>:4500/api/oidc/callback`
+3. Note the **Client ID** and **Client secret**
+4. In Settings → Authentication, set the issuer to your Authentik
+   application's *OpenID Configuration Issuer`
+   (e.g. `https://authentik.example/application/o/<app-slug>/`), plus the
+   client ID and secret
+
+### Authelia
+
+1. In your `configuration.yml`, add an `oauth2` section under the
+   tracker's client:
+
+```yaml
+      - client_id: food-tracker
+        client_secret: <secret>
+        public: false
+        authorization_code: 60
+        redirect_uris:
+          - http://<tracker-host>:4500/api/oidc/callback
+        scopes:
+          - openid
+          - profile
+          - email
+        userinfo_signed_signature_alg: none
+        token_endpoint_auth_method: client_secret_basic
 ```
 
-Environment: `DATA_DIR` (data root, default `./data`) and `HOUSEHOLD`
-(default `default`) — same files the web app uses. The product list is
-global; only inventories are per household.
+2. In Settings → Authentication, set the issuer to your Authelia
+   instance's OIDC issuer (e.g. `https://auth.example`), plus the client
+   ID and secret
 
-```bash
-HOUSEHOLD=cabin python3 tracker.py buy "Coffee" 2027-01-15 --quantity 2
-```
+Endpoints are discovered automatically from the issuer's
+`/.well-known/openid-configuration` for all providers. With
+**auto-create** enabled (default), unknown SSO users get a normal account
+on first login; list their emails in *Global admin emails* to grant the
+global admin role.
 
 ## Data layout
 
 ```
 data/
-  products.csv                  # GLOBAL product list (shared by all households)
+  products.csv                  # GLOBAL product list (name, manufacturer, type, category, size)
   households/
     <household>/inventory.csv   # id, product, manufacturer, best_before, quantity, added_date
 config/
-  users.json                    # user accounts (PBKDF2-hashed passwords)
-  config.json                   # widget API key, OIDC settings
+  users.json                    # user accounts (roles, household admin rights, personal API keys)
+  config.json                   # OIDC settings
 ```
 
 ## Security notes
@@ -298,9 +305,3 @@ config/
 - The widget endpoint is authenticated by the API key only; treat it as
   semi-public (it exposes expiry dates, nothing personal).
 - Sessions are in-memory: restarting the container logs everyone out.
-
-## Development run (no Docker)
-
-```bash
-python3 server.py          # serves on the PORT env (default 4500), data in ./data, config in ./config
-```

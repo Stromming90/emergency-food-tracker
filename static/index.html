@@ -51,11 +51,14 @@
   .lvl-3months { background: var(--warn3); }
   .lvl-1month { background: var(--warn1); }
   .lvl-expired { background: var(--expired); }
+  .lvl-all { background: var(--accent); }
   tr.expired td { color: var(--expired); }
   .del { background: none; border: none; color: var(--muted); cursor: pointer;
          padding: 2px 6px; font-size: 1rem; }
   .del:hover { color: var(--warn1); }
-  .legend { display: flex; gap: 10px; flex-wrap: wrap; font-size: .75rem; margin-bottom: 14px; }
+  .legend { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .legend .badge { cursor: pointer; outline: 2px solid transparent; outline-offset: 1px; }
+  .legend .badge.active { outline-color: var(--text); }
   .empty { color: var(--muted); font-size: .85rem; padding: 10px 0; }
   .scroll { max-height: 420px; overflow-y: auto; }
 
@@ -81,7 +84,6 @@
   .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
              margin-bottom: 10px; }
   .toolbar input[type="text"] { min-width: 160px; }
-  .toolbar select { min-width: 130px; flex: 0; }
   .toolbar .count { color: var(--muted); font-size: .8rem; margin-left: auto; }
 
   /* auth screens */
@@ -112,27 +114,16 @@
                  padding: 8px 14px; }
   .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
   .tabpane { margin-top: 10px; }
-  .checkbox-list { display: flex; gap: 10px 18px; flex-wrap: wrap; margin: 8px 0; }
-  .checkbox-list label { display: inline-flex; gap: 6px; align-items: center;
-                          font-size: .9rem; }
   .pill { display: inline-block; background: var(--border); border-radius: 999px;
           padding: 2px 10px; font-size: .78rem; margin: 2px 4px 2px 0; }
   .form-col { display: flex; flex-direction: column; gap: 8px; }
   .form-col label { font-size: .82rem; color: var(--muted); }
 
-  /* v2.3: category setup (products tab) */
-  .cat-info { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 10px; font-size: .82rem; }
-  .cat-info .pill { background: var(--accent); color: #fff; }
-  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
-  .chip { background: transparent; border: 1px solid var(--border); color: var(--text);
-          border-radius: 999px; padding: 4px 12px; font-size: .82rem; cursor: pointer; }
-  .chip:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .chip.added { background: transparent; color: var(--muted); cursor: default;
-                border-style: dashed; }
-  .chip.added:hover { background: transparent; color: var(--muted); border-color: var(--border); }
-  .chip.added::after { content: ' ✓'; }
+  /* one-per-line lists (households / users) */
+  .lines label, .lines .line { display: flex; gap: 8px; align-items: center;
+                                margin: 4px 0; }
+  .lines label { font-size: .9rem; }
 
-  /* inventory quantity inline edit */
   .qty-input { width: 64px; padding: 3px 6px; font-size: .85rem; }
 </style>
 </head>
@@ -144,13 +135,13 @@
     <div class="sub" style="text-align:center" id="auth-sub"></div>
 
     <form id="f-setup" hidden>
-      <h2 style="text-align:center">First-time setup</h2>
-      <p class="muted" style="text-align:center">Create the admin account. You can also
-      name your first household (defaults to "default").</p>
+      <h2 style="text-align:center">Getting started</h2>
+      <p class="muted" style="text-align:center">Create the admin account and your
+      first household (e.g. "home").</p>
       <input id="s-user" placeholder="Admin username" autocomplete="username" required>
       <input id="s-pass" type="password" placeholder="Password (min 8 chars)"
              autocomplete="new-password" required>
-      <input id="s-household" placeholder="First household name (optional)">
+      <input id="s-household" placeholder="First household name" required>
       <button type="submit">Create admin account</button>
     </form>
 
@@ -172,7 +163,7 @@
     <span class="spacer"></span>
     <label class="hh-label" for="household">Household:</label>
     <select id="household" title="Household"></select>
-    <button class="iconbtn" id="b-admin" title="Settings" hidden>⚙️</button>
+    <button class="iconbtn" id="b-settings" title="Settings">⚙️</button>
     <button class="iconbtn" id="b-theme" title="Theme: light / dark / auto">🌙</button>
     <button class="iconbtn" id="b-logout" title="Log out">⏻</button>
   </div>
@@ -188,8 +179,8 @@
     <div class="card">
       <h2>Record a purchase</h2>
       <form id="f-buy">
-        <select id="b-cat" style="flex:1;min-width:160px"
-                title="Filter products by category"></select>
+        <select id="b-type" style="flex:1;min-width:180px"
+                title="Filter products by type"></select>
         <select id="b-product" required style="flex:2;min-width:180px"></select>
         <input id="b-date" type="date" required title="Best before date">
         <input id="b-qty" type="number" min="1" value="1" style="flex:0;width:70px" title="Quantity">
@@ -202,22 +193,9 @@
       <h2>Inventory</h2>
       <div class="toolbar">
         <input type="text" id="inv-filter" placeholder="Filter by product / manufacturer…">
-        <select id="inv-level">
-          <option value="">All statuses</option>
-          <option value="ok">Fine</option>
-          <option value="6months">Less than 6 months</option>
-          <option value="3months">Less than 3 months</option>
-          <option value="1month">Less than 1 month</option>
-          <option value="expired">Expired</option>
-        </select>
         <span class="count" id="inv-count"></span>
       </div>
-      <div class="legend">
-        <span class="badge lvl-6months">Less than 6 months</span>
-        <span class="badge lvl-3months">Less than 3 months</span>
-        <span class="badge lvl-1month">Less than 1 month</span>
-        <span class="badge lvl-expired">expired</span>
-      </div>
+      <div class="legend" id="inv-levels"></div>
       <div class="scroll">
         <table id="t-inventory"><thead>
           <tr>
@@ -237,33 +215,37 @@
   <!-- ============ Products tab ============ -->
   <div data-pane="products" hidden>
     <div class="card">
-      <h2>Set up your product list
-        <span class="muted" style="font-weight:400;font-size:.78rem">(shared by all households)</span></h2>
-      <p class="muted" style="margin:0 0 10px">Pick an emergency-food category, then click
-      suggested items to add them to the global product list.</p>
-      <div class="row">
-        <select id="setup-cat" style="min-width:240px"></select>
+      <h2>Add a product</h2>
+      <div class="form-col" style="max-width:560px">
+        <label for="p-type">Type</label>
+        <select id="p-type"></select>
+        <label for="p-cat">Category</label>
+        <input id="p-cat" list="p-cat-list" placeholder="e.g. ravioli, pasta, coffee…">
+        <datalist id="p-cat-list"></datalist>
+        <label for="p-name">Product name</label>
+        <input id="p-name" placeholder="e.g. Barilla Fusilli">
+        <label for="p-man">Manufacturer</label>
+        <input id="p-man" placeholder="e.g. Barilla">
+        <label for="p-size">Size</label>
+        <div class="row" style="margin:0">
+          <input id="p-size" type="number" min="0" step="any" placeholder="Amount"
+                 style="max-width:140px">
+          <select id="p-size-unit" style="flex:0;max-width:90px">
+            <option value="g">g</option>
+            <option value="ml">ml</option>
+          </select>
+        </div>
       </div>
-      <div class="cat-info" id="setup-info"></div>
-      <div class="chips" id="setup-chips"></div>
-      <div class="msg" id="msg-setup"></div>
-    </div>
-
-    <div class="card">
-      <h2>Add a product manually</h2>
-      <form id="f-product">
-        <input id="p-name" placeholder="Product name" required>
-        <input id="p-man" placeholder="Manufacturer (optional)">
-        <select id="p-cat" style="min-width:180px"></select>
-        <button type="submit">Add</button>
-      </form>
+      <div class="row" style="margin-top:12px">
+        <button id="p-add">Add product</button>
+      </div>
       <div class="msg" id="msg-product"></div>
     </div>
 
     <div class="card">
       <h2>Product list</h2>
       <div class="toolbar">
-        <input type="text" id="prod-filter" placeholder="Filter by name / manufacturer / category…">
+        <input type="text" id="prod-filter" placeholder="Filter by name / manufacturer / type / category…">
         <span class="count" id="prod-count"></span>
       </div>
       <div class="scroll">
@@ -271,7 +253,9 @@
           <tr>
             <th class="sortable" data-key="name">Product<span class="arrow"></span></th>
             <th class="sortable" data-key="manufacturer">Manufacturer<span class="arrow"></span></th>
+            <th class="sortable" data-key="type">Type<span class="arrow"></span></th>
             <th class="sortable" data-key="category">Category<span class="arrow"></span></th>
+            <th class="sortable" data-key="size">Size<span class="arrow"></span></th>
             <th></th>
           </tr></thead>
         <tbody></tbody></table>
@@ -282,127 +266,188 @@
 </div>
 
 <!-- settings modal -->
-<div class="modal-bg" id="admin-modal" hidden>
+<div class="modal-bg" id="settings-modal" hidden>
   <div class="modal">
     <div class="row" style="justify-content:space-between">
       <h2>⚙️ Settings</h2>
-      <button class="del" id="admin-close" title="Close">✕</button>
+      <button class="del" id="settings-close" title="Close">✕</button>
     </div>
 
     <div class="tabs" id="settings-tabs">
-      <button data-tab="users">Users</button>
+      <button data-tab="general" class="active">General</button>
+      <button data-tab="users" id="tab-users">Users</button>
       <button data-tab="households">Households</button>
-      <button data-tab="auth">Authentication</button>
-      <button data-tab="apikey">API key</button>
+      <button data-tab="auth" id="tab-auth">Authentication</button>
+      <button data-tab="apikey">API Key</button>
+    </div>
+
+    <!-- ============ General tab ============ -->
+    <div class="tabpane" data-pane="general">
+      <p style="margin:4px 0">Welcome to the Settings menu. What you can do here
+      depends on your role:</p>
+      <ul class="muted" style="margin:6px 0; line-height:1.6">
+        <li><b>General</b> — this overview.</li>
+        <li><b>Users</b> — create and manage user accounts. Global admins manage
+        everyone; household admins manage the users of the households they
+        administer (create accounts, reset passwords, grant or revoke household
+        admin).</li>
+        <li><b>Households</b> — create new households (you become the household
+        admin of a household you create), see members, migrate inventory
+        between households (household admins), and delete households
+        (global admin only).</li>
+        <li><b>Authentication</b> — configure OIDC / SSO login (Keycloak,
+        Authentik, Authelia…). Global admin only.</li>
+        <li><b>API Key</b> — your personal key for the gethomepage widget.
+        Each user has their own key and can regenerate it at any time; the
+        widget only reports the households you have access to.</li>
+      </ul>
+      <p class="muted">Roles: a <b>global admin</b> can do and see everything.
+      A <b>household admin</b> can edit the product list, migrate inventory and
+      manage the users of the households they administer, and can make other
+      users household admins of those households.</p>
     </div>
 
     <!-- ============ Users tab ============ -->
-    <div class="tabpane" data-pane="users">
+    <div class="tabpane" data-pane="users" hidden>
       <table id="t-users"><thead>
-        <tr><th>User</th><th>Admin</th><th>Households</th><th></th></tr></thead><tbody></tbody></table>
+        <tr><th>User</th><th>Role</th><th>Households</th><th></th></tr></thead><tbody></tbody></table>
 
       <h3 style="margin:18px 0 6px">Create user</h3>
       <div class="row">
         <input id="nu-user" placeholder="Username" style="max-width:160px">
         <input id="nu-pass" type="password" placeholder="Password" style="max-width:150px">
-        <label class="muted"><input type="checkbox" id="nu-admin"> admin</label>
+        <label class="muted" id="nu-global-wrap"><input type="checkbox" id="nu-global"> global admin</label>
       </div>
       <div class="muted">Households for the new user:</div>
-      <div class="checkbox-list" id="nu-households"></div>
-      <div class="row"><button id="nu-add" class="ghost">Create user</button></div>
+      <div class="checkbox-list lines" id="nu-households"></div>
       <div class="msg" id="msg-admin-users"></div>
     </div>
 
     <!-- ============ Households tab ============ -->
     <div class="tabpane" data-pane="households" hidden>
-      <h3 style="margin:0 0 6px">Your households</h3>
-      <div id="hh-list"></div>
+      <h3 style="margin:0 0 6px">Households</h3>
+      <div id="hh-list" class="lines"></div>
 
       <h3 style="margin:18px 0 6px">Create household</h3>
+      <p class="muted" style="margin:2px 0">Any user can create a household — you
+      become its household admin. Global admins can also assign other users to it.</p>
       <div class="row">
         <input id="hh-new" placeholder="New household name" style="max-width:220px">
         <button id="hh-add" class="ghost">Create</button>
       </div>
-      <div class="muted">Assign existing users to the new household:</div>
-      <div class="checkbox-list" id="hh-users"></div>
+      <div class="muted" id="hh-assign-wrap">Assign existing users:</div>
+      <div class="checkbox-list lines" id="hh-users"></div>
       <div class="msg" id="msg-admin-hh"></div>
 
-      <h3 style="margin:18px 0 6px">Delete household</h3>
-      <div class="row">
-        <select id="hh-del" style="max-width:220px"></select>
-        <button id="hh-del-btn" class="ghost">Delete</button>
-      </div>
-      <p class="muted">Deleting a household removes its inventory and unassigns it from users. Users are never deleted.</p>
-      <div class="msg" id="msg-admin-hh-del"></div>
+      <div id="hh-admin-section">
+        <h3 style="margin:18px 0 6px">Delete household</h3>
+        <div class="row">
+          <select id="hh-del" style="max-width:220px"></select>
+          <button id="hh-del-btn" class="ghost">Delete</button>
+        </div>
+        <p class="muted">Global admin only. Deleting a household removes its
+        inventory and unassigns it from users. Users are never deleted.</p>
+        <div class="msg" id="msg-admin-hh-del"></div>
 
-      <h3 style="margin:18px 0 6px">Migrate inventory</h3>
-      <p class="muted" style="margin:4px 0">Move all inventory from one household to another — useful when reorganising or creating a new household.</p>
-      <div class="row">
-        <label class="muted">From <select id="mig-from"></select></label>
-        <label class="muted">To <select id="mig-to"></select></label>
-        <button id="mig-go" class="ghost">Move all items</button>
+        <h3 style="margin:18px 0 6px">Migrate inventory</h3>
+        <p class="muted" style="margin:4px 0">Move all inventory from one household
+        to another — household admins of the source household or global admins.</p>
+        <div class="row">
+          <label class="muted">From <select id="mig-from"></select></label>
+          <label class="muted">To <select id="mig-to"></select></label>
+          <button id="mig-go" class="ghost">Move all items</button>
+        </div>
+        <div class="msg" id="msg-admin-migrate"></div>
       </div>
-      <div class="msg" id="msg-admin-migrate"></div>
     </div>
 
     <!-- ============ Authentication tab ============ -->
     <div class="tabpane" data-pane="auth" hidden>
-      <h3 style="margin:0 0 6px">OIDC / SSO (Keycloak etc.)</h3>
+      <h3 style="margin:0 0 6px">OIDC / SSO (Keycloak, Authentik, Authelia…)</h3>
       <div class="row"><input id="o-issuer" placeholder="Issuer URL, e.g. https://keycloak/realms/myrealm" style="min-width:260px"></div>
       <div class="row"><input id="o-client" placeholder="Client ID" style="min-width:180px">
         <input id="o-secret" type="password" placeholder="Client secret" style="min-width:180px"></div>
       <div class="row"><input id="o-redirect" placeholder="Redirect URI (optional, auto if blank)" style="min-width:260px"></div>
-      <div class="row"><input id="o-admins" placeholder="Admin emails (comma-sep)" style="min-width:260px"></div>
+      <div class="row"><input id="o-admins" placeholder="Global admin emails (comma-sep)" style="min-width:260px"></div>
       <label class="muted"><input type="checkbox" id="o-auto" checked> auto-create unknown users on first SSO login</label>
       <div class="row"><button id="o-save">Save OIDC settings</button></div>
       <div class="msg" id="msg-admin-oidc"></div>
     </div>
 
-    <!-- ============ API key tab ============ -->
+    <!-- ============ API Key tab ============ -->
     <div class="tabpane" data-pane="apikey" hidden>
       <h3 style="margin:0 0 6px">Homepage widget</h3>
-      <p class="muted">Use this key in your gethomepage widget config. The widget URL accepts
-      <code>household=default</code>, a comma-separated list, or <code>household=all</code>.</p>
+      <p class="muted">This is <b>your personal</b> API key for the gethomepage
+      widget. Each user has their own unique key; the widget only reports the
+      households you have access to. Use it in your widget config — the URL
+      accepts <code>household=default</code>, a comma-separated list, or
+      <code>household=all</code> (all of your households).</p>
       <code id="apikey">…</code>
+      <div class="row" style="margin-top:10px">
+        <button id="apikey-regen" class="ghost">Regenerate API key</button>
+      </div>
+      <div class="msg" id="msg-apikey"></div>
     </div>
   </div>
 </div>
 
-<!-- edit households modal (nested) -->
-<div class="modal-bg" id="hh-modal" hidden>
-  <div class="modal" style="max-width:420px">
-    <div class="row" style="justify-content:space-between">
-      <h2 id="eh-title">Edit households</h2>
-      <button class="del" id="eh-close" title="Close">✕</button>
-    </div>
-    <p class="muted">Tick the households this user belongs to.</p>
-    <div class="checkbox-list" id="eh-list"></div>
-    <div class="row"><button id="eh-save">Save</button></div>
-    <div class="msg" id="msg-eh"></div>
-  </div>
-</div>
-
-<!-- edit product modal (admin) -->
+<!-- edit product modal (household/global admin) -->
 <div class="modal-bg" id="pe-modal" hidden>
-  <div class="modal" style="max-width:420px">
+  <div class="modal" style="max-width:440px">
     <div class="row" style="justify-content:space-between">
       <h2>Edit product</h2>
       <button class="del" id="pe-close" title="Close">✕</button>
     </div>
     <p class="muted">Changes apply to the global list and to every household's inventory.</p>
     <div class="form-col">
+      <label for="pe-type">Type</label>
+      <select id="pe-type"></select>
+      <label for="pe-cat">Category</label>
+      <input id="pe-cat" list="pe-cat-list">
+      <datalist id="pe-cat-list"></datalist>
       <label for="pe-name">Product name</label>
       <input id="pe-name" required>
       <label for="pe-man">Manufacturer</label>
       <input id="pe-man">
-      <label for="pe-cat">Category</label>
-      <select id="pe-cat"></select>
+      <label for="pe-size">Size</label>
+      <div class="row" style="margin:0">
+        <input id="pe-size" type="number" min="0" step="any" style="max-width:140px">
+        <select id="pe-size-unit" style="flex:0;max-width:90px">
+          <option value="g">g</option>
+          <option value="ml">ml</option>
+        </select>
+      </div>
     </div>
     <div class="row" style="margin-top:12px">
       <button id="pe-save">Save changes</button>
       <button id="pe-cancel" class="ghost">Cancel</button>
     </div>
     <div class="msg" id="msg-pe"></div>
+  </div>
+</div>
+
+<!-- edit user modal (households / admin flag) -->
+<div class="modal-bg" id="eu-modal" hidden>
+  <div class="modal" style="max-width:460px">
+    <div class="row" style="justify-content:space-between">
+      <h2 id="eu-title">Edit user</h2>
+      <button class="del" id="eu-close" title="Close">✕</button>
+    </div>
+    <div id="eu-global-section">
+      <label class="muted"><input type="checkbox" id="eu-global"> global admin</label>
+    </div>
+    <div class="muted">Households (one per line):</div>
+    <div class="checkbox-list lines" id="eu-households"></div>
+    <div class="muted">Household admin for:</div>
+    <div class="checkbox-list lines" id="eu-admin-households"></div>
+    <div class="row" style="margin-top:10px">
+      <input id="eu-pass" type="password" placeholder="New password (optional)">
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="eu-save">Save changes</button>
+      <button id="eu-cancel" class="ghost">Cancel</button>
+    </div>
+    <div class="msg" id="msg-eu"></div>
   </div>
 </div>
 
@@ -430,14 +475,14 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', app
 applyTheme();
 
 // ---------- state ----------
-let BOOT = null, USER = null, DATA = null, HH = 'default';
-let ADMIN = { users: [], households: [] };
+let BOOT = null, USER = null, DATA = null, HH = '';
+let ADMIN = { users: [], households: [], viewer: {} };
 
-// inventory view state: filter text, level filter, sort key + direction
-let invFilter = '', invLevel = '', invSort = { key: 'days_left', dir: 1 };
+// inventory view state
+let invFilter = '', invLevel = '';
+let invSort = { key: 'days_left', dir: 1 };
 let prodFilter = '', prodSort = { key: 'name', dir: 1 };
-// v2.3: purchase category filter + products setup category
-let buyCat = '', setupCat = '';
+let buyType = '';
 
 async function api(method, url, body) {
   const r = await fetch(url, { method,
@@ -453,23 +498,27 @@ function msg(id, text, ok) {
   $(id).className = 'msg ' + (ok ? 'ok' : 'error');
 }
 
-// ---------- categories (v2.3) ----------
-function cats() { return (DATA && DATA.categories) || []; }
-function catById(id) { return cats().find(c => c.id === id); }
-function catLabel(id) {
-  const c = catById(id);
-  return c ? c.label : (id || '');
-}
-function catOptions(sel, current) {
-  // options for a category select; keeps an unknown legacy value selectable
-  let html = cats().map(c =>
-    `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join('');
-  if (current && !catById(current))
+// ---------- types (v2.4) ----------
+function types() { return (DATA && DATA.types) || []; }
+function typeById(id) { return types().find(t => t.id === id); }
+function typeLabel(id) { const t = typeById(id); return t ? t.label : (id || ''); }
+function typeOptions(sel, current) {
+  let html = types().map(t =>
+    `<option value="${esc(t.id)}">${esc(t.label)}</option>`).join('');
+  if (current && !typeById(current))
     html += `<option value="${esc(current)}">${esc(current)}</option>`;
   sel.innerHTML = html;
-  if (current) sel.value = current;
+  if (current !== undefined) sel.value = current;
 }
-const STORAGE_LABEL = { pantry: 'pantry', cool_dry: 'cool & dry', refrigerated: 'refrigerated' };
+function fillCatDatalist(listId, typeId) {
+  const t = typeById(typeId);
+  $(listId).innerHTML = (t ? t.categories : []).map(c => `<option value="${esc(c)}">`).join('');
+}
+
+// ---------- roles ----------
+const isGlobalAdmin = () => USER && USER.role === 'global_admin';
+const isHhAdmin = hh => isGlobalAdmin() || (USER && (USER.admin_households||[]).includes(hh));
+const canEditProducts = () => isGlobalAdmin() || (USER && (USER.admin_households||[]).length > 0);
 
 // ---------- auth screens ----------
 function showAuth() {
@@ -479,21 +528,18 @@ function showAuth() {
     $('b-oidc').hidden = !BOOT.oidc_enabled;
   } else {
     $('f-setup').hidden = false;
-    $('auth-sub').textContent = 'Welcome! Set up your admin account to begin.';
+    $('auth-sub').textContent = 'Welcome! Set up your admin account and first household to begin.';
   }
 }
 
 function showApp() {
   $('auth').hidden = true; $('app').hidden = false;
-  $('b-admin').hidden = !USER.is_admin;
-  USER.households.forEach(h => {
-    const o = document.createElement('option');
-    o.value = o.textContent = h;
-    $('household').appendChild(o);
-  });
+  const vhh = USER.visible_households || USER.households || [];
+  const sel = $('household');
+  sel.innerHTML = vhh.map(h => `<option value="${esc(h)}">${esc(h)}</option>`).join('');
   HH = localStorage.getItem('household');
-  if (!USER.households.includes(HH)) HH = USER.households[0];
-  $('household').value = HH;
+  if (!vhh.includes(HH)) HH = vhh[0] || '';
+  if (HH) sel.value = HH;
   load();
 }
 
@@ -537,63 +583,83 @@ $('main-tabs').addEventListener('click', e => {
 
 // ---------- main app ----------
 async function load() {
+  if (!HH) {
+    DATA = { products: [], inventory: [], types: [], today: '', households: [] };
+    return;
+  }
   DATA = await api('GET', '/api/data?household=' + encodeURIComponent(HH));
   if (DATA.error) { alert(DATA.error); return; }
   localStorage.setItem('household', HH);
   render();
 }
 
-const LEVEL_LABEL = { ok: 'fine', '6months': '< 6 mo', '3months': '< 3 mo',
-                      '1month': '< 1 mo', expired: 'expired' };
+const LEVEL_LABEL = { ok: 'Fine', '6months': 'Less than 6 months',
+                      '3months': 'Less than 3 months', '1month': 'Less than 1 month',
+                      expired: 'Expired' };
 
 function render() {
   const totalQty = DATA.inventory.reduce((s, r) => s + r.quantity, 0);
   $('today').textContent = 'Today: ' + DATA.today + ' — ' + HH +
-      ' — ' + totalQty + ' item(s) in stock, ' + DATA.inventory.length + ' entr(ies)';
+      (DATA.inventory.length ? ' — ' + totalQty + ' item(s) in stock, '
+        + DATA.inventory.length + ' entr(ies)' : '');
 
-  // purchase category filter
-  const bc = $('b-cat');
-  const curBuy = buyCat;
-  bc.innerHTML = '<option value="">All categories</option>' +
-    cats().map(c => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join('');
-  buyCat = cats().some(c => c.id === curBuy) ? curBuy : '';
-  bc.value = buyCat;
+  // purchase type dropdown with per-type product counts
+  const bt = $('b-type');
+  const total = DATA.products.length;
+  const keep = buyType && typeById(buyType) ? buyType : '';
+  buyType = keep;
+  const counts = {};
+  DATA.products.forEach(p => { if (p.type) counts[p.type] = (counts[p.type] || 0) + 1; });
+  bt.innerHTML = `<option value="">All types (${total})</option>` +
+    types().map(t => `<option value="${esc(t.id)}">${esc(t.label)} (${counts[t.id] || 0})</option>`).join('');
+  bt.value = buyType;
   renderBuyProducts();
 
+  renderLevelChips();
   renderInventory();
-  renderSetup();
   renderProducts();
 }
 
 // ---------- purchase form (household tab) ----------
-function productCat(p) { return p.category || ''; }
-
 function renderBuyProducts() {
-  const list = DATA.products.filter(p => !buyCat || productCat(p) === buyCat);
+  const list = DATA.products.filter(p => !buyType || p.type === buyType);
   $('b-product').innerHTML = list.map(p =>
     `<option value="${esc(p.name)}\u0001${esc(p.manufacturer || '')}">` +
     esc(p.name + (p.manufacturer ? ' — ' + p.manufacturer : '')) + `</option>`).join('');
 }
 
 function suggestBestBefore(productName, manufacturer) {
-  // suggest a best-before date from the product's category shelf life (max months)
   const p = DATA.products.find(x => x.name === productName &&
     (x.manufacturer || '') === (manufacturer || ''));
-  const c = p && catById(productCat(p));
-  if (!c) return;
-  const months = c.shelf_life_months[1];
+  const t = p && typeById(p.type);
+  if (!t) return;
+  const months = t.shelf_life_months[1];
   const d = new Date();
   d.setMonth(d.getMonth() + months);
   $('b-date').value = d.toISOString().slice(0, 10);
 }
 
-$('b-cat').addEventListener('change', e => { buyCat = e.target.value; renderBuyProducts(); });
+$('b-type').addEventListener('change', e => { buyType = e.target.value; renderBuyProducts(); });
 $('b-product').addEventListener('change', () => {
   const [name, manufacturer] = ($('b-product').value || '').split('\u0001');
   if (!$('b-date').value) suggestBestBefore(name, manufacturer);
 });
 
 // ---------- inventory (household tab) ----------
+const LEVEL_KEYS = ['all', 'ok', '6months', '3months', '1month', 'expired'];
+
+function renderLevelChips() {
+  const counts = { all: DATA.inventory.length };
+  DATA.inventory.forEach(r => counts[r.level] = (counts[r.level] || 0) + 1);
+  if (!LEVEL_KEYS.includes(invLevel)) invLevel = 'all';
+  $('inv-levels').innerHTML = LEVEL_KEYS.map(k =>
+    `<span class="badge lvl-${k} ${invLevel === k ? 'active' : ''}"
+       title="${esc(LEVEL_LABEL[k] || k)} (${counts[k] || 0})"
+       onclick="setLevel('${k}')">${LEVEL_LABEL[k] || k} (${counts[k] || 0})</span>`).join('');
+}
+
+window.setLevel = k => { invLevel = k; renderLevelChips(); renderInventory(); };
+
 function visibleInventory() {
   let rows = DATA.inventory;
   if (invFilter) {
@@ -602,7 +668,7 @@ function visibleInventory() {
       r.product.toLowerCase().includes(q) ||
       (r.manufacturer || '').toLowerCase().includes(q));
   }
-  if (invLevel) rows = rows.filter(r => r.level === invLevel);
+  if (invLevel && invLevel !== 'all') rows = rows.filter(r => r.level === invLevel);
   rows = [...rows].sort((a, b) => {
     const k = invSort.key, d = invSort.dir;
     let va = a[k], vb = b[k];
@@ -618,9 +684,9 @@ function renderInventory() {
   tb.innerHTML = rows.map(r => `
     <tr class="${r.level === 'expired' ? 'expired' : ''}">
       <td>${esc(r.product)}${r.manufacturer ? '<br><small style="color:var(--muted)">' + esc(r.manufacturer) + '</small>' : ''}</td>
-      <td><input type="number" min="1" value="${r.quantity}" class="qty-input"
-            title="Change quantity"
-            onchange="setQty(${r.id}, this.value)"></td><td>${r.best_before}</td>
+      <td>${r.quantity} <button class="del" title="Change quantity"
+            onclick="editQty(${r.id}, ${r.quantity})">✎</button></td>
+      <td>${r.best_before}</td>
       <td>${r.level === 'expired' ? r.days_left + ' (over)' : r.days_left}</td>
       <td><span class="badge lvl-${r.level}">${LEVEL_LABEL[r.level]}</span></td>
       <td><button class="del" title="Remove item" onclick="delItem(${r.id})">✕</button></td>
@@ -628,14 +694,12 @@ function renderInventory() {
   $('empty-inventory').hidden = rows.length > 0;
   $('inv-count').textContent = rows.length === DATA.inventory.length
     ? rows.length + ' item(s)' : rows.length + ' of ' + DATA.inventory.length + ' item(s)';
-  // sort arrows
   document.querySelectorAll('#t-inventory th.sortable').forEach(th =>
     th.querySelector('.arrow').textContent = th.dataset.key === invSort.key
       ? (invSort.dir > 0 ? '▲' : '▼') : '');
 }
 
 $('inv-filter').addEventListener('input', e => { invFilter = e.target.value; renderInventory(); });
-$('inv-level').addEventListener('change', e => { invLevel = e.target.value; renderInventory(); });
 $('t-inventory').querySelector('thead').addEventListener('click', e => {
   const th = e.target.closest('th.sortable');
   if (!th) return;
@@ -649,12 +713,14 @@ window.delItem = async id => {
   if (j.error) alert(j.error); load();
 };
 
-// v2.3: change the quantity of an existing inventory item
-window.setQty = async (id, qty) => {
+// v2.4: quantity editing behind a deliberate ✎ button (no accidental edits)
+window.editQty = async (id, current) => {
+  const input = prompt(`New quantity for this item (current: ${current}):`, current);
+  if (input === null) return;
   const j = await api('PUT', `/api/inventory/${id}`, {
-    household: HH, quantity: qty });
-  if (j.error) { alert(j.error); load(); }
-  else { msg('msg-buy', 'Quantity updated ✓', true); load(); }
+    household: HH, quantity: input.trim() });
+  if (j.error) alert(j.error);
+  load();
 };
 
 $('f-buy').addEventListener('submit', async e => {
@@ -667,36 +733,7 @@ $('f-buy').addEventListener('submit', async e => {
   if (!j.error) load();
 });
 
-// ---------- products setup (products tab) ----------
-function renderSetup() {
-  const sel = $('setup-cat');
-  const cur = setupCat && catById(setupCat) ? setupCat : (cats()[0] && cats()[0].id);
-  setupCat = cur;
-  catOptions(sel, cur);
-  const c = catById(cur);
-  if (!c) { $('setup-info').innerHTML = ''; $('setup-chips').innerHTML = ''; return; }
-  $('setup-info').innerHTML =
-    `<span class="pill">Storage: ${esc(STORAGE_LABEL[c.storage] || c.storage)}</span>` +
-    `<span class="pill">Typical shelf life: ${c.shelf_life_months[0]}–${c.shelf_life_months[1]} months</span>`;
-  $('setup-chips').innerHTML = c.items.map(it => {
-    const added = DATA.products.some(p =>
-      p.name.toLowerCase() === it.toLowerCase() && productCat(p) === cur);
-    return added
-      ? `<button type="button" class="chip added" title="Already on the list">${esc(it)}</button>`
-      : `<button type="button" class="chip" title="Add to the global product list"
-          onclick="addSuggested('${esc(cur)}','${esc(it)}')">${esc(it)}</button>`;
-  }).join('');
-}
-
-$('setup-cat').addEventListener('change', e => { setupCat = e.target.value; renderSetup(); });
-
-window.addSuggested = async (cat, name) => {
-  const j = await api('POST', '/api/products', { name, manufacturer: '', category: cat });
-  msg('msg-setup', j.error || `Added "${name}" ✓`, !j.error);
-  if (!j.error) load();
-};
-
-// ---------- products list (products tab) ----------
+// ---------- products tab ----------
 function visibleProducts() {
   let rows = DATA.products;
   if (prodFilter) {
@@ -704,12 +741,14 @@ function visibleProducts() {
     rows = rows.filter(p =>
       p.name.toLowerCase().includes(q) ||
       (p.manufacturer || '').toLowerCase().includes(q) ||
-      catLabel(p.category).toLowerCase().includes(q));
+      typeLabel(p.type).toLowerCase().includes(q) ||
+      (p.category || '').toLowerCase().includes(q));
   }
   rows = [...rows].sort((a, b) => {
     const k = prodSort.key, d = prodSort.dir;
-    let va = k === 'category' ? catLabel(a.category) : (a[k] || '').toLowerCase();
-    let vb = k === 'category' ? catLabel(b.category) : (b[k] || '').toLowerCase();
+    let va = k === 'type' ? typeLabel(a.type) : (a[k] || '');
+    let vb = k === 'type' ? typeLabel(b.type) : (b[k] || '');
+    va = String(va).toLowerCase(); vb = String(vb).toLowerCase();
     return (va > vb ? 1 : va < vb ? -1 : 0) * d;
   });
   return rows;
@@ -720,12 +759,13 @@ function renderProducts() {
   const tb = $('t-products').querySelector('tbody');
   tb.innerHTML = rows.map(p =>
     `<tr><td>${esc(p.name)}</td><td>${esc(p.manufacturer || '—')}</td>
-     <td>${esc(catLabel(p.category) || '—')}</td>
+     <td>${esc(typeLabel(p.type) || '—')}</td>
+     <td>${esc(p.category || '—')}</td><td>${esc(p.size || '—')}</td>
      <td>
-       ${USER.is_admin ? `<button class="del" title="Edit product (admin)"
+       ${canEditProducts() ? `<button class="del" title="Edit product"
          onclick="editProduct('${esc(p.name)}','${esc(p.manufacturer || '')}')">✎</button>` : ''}
-       <button class="del" title="Remove product"
-         onclick="delProduct('${esc(p.name)}','${esc(p.manufacturer || '')}')">✕</button>
+       ${canEditProducts() ? `<button class="del" title="Remove product"
+         onclick="delProduct('${esc(p.name)}','${esc(p.manufacturer || '')}')">✕</button>` : ''}
      </td></tr>`).join('');
   $('empty-products').hidden = rows.length > 0;
   $('prod-count').textContent = rows.length === DATA.products.length
@@ -733,10 +773,11 @@ function renderProducts() {
   document.querySelectorAll('#t-products th.sortable').forEach(th =>
     th.querySelector('.arrow').textContent = th.dataset.key === prodSort.key
       ? (prodSort.dir > 0 ? '▲' : '▼') : '');
-  // keep the manual-add category select filled
-  const pc = $('p-cat');
-  const cur = pc.value;
-  catOptions(pc, cats().some(c => c.id === cur) ? cur : (cats()[0] && cats()[0].id));
+  // add-form type select + category suggestions
+  const pt = $('p-type');
+  const cur = typeById(pt.value) ? pt.value : (types()[0] && types()[0].id);
+  typeOptions(pt, cur);
+  fillCatDatalist('p-cat-list', cur);
 }
 
 $('prod-filter').addEventListener('input', e => { prodFilter = e.target.value; renderProducts(); });
@@ -747,14 +788,16 @@ $('t-products').querySelector('thead').addEventListener('click', e => {
   else prodSort = { key: th.dataset.key, dir: 1 };
   renderProducts();
 });
+$('p-type').addEventListener('change', () => fillCatDatalist('p-cat-list', $('p-type').value));
 
-$('f-product').addEventListener('submit', async e => {
-  e.preventDefault();
+$('p-add').addEventListener('click', async () => {
+  const size = $('p-size').value
+    ? `${$('p-size').value} ${$('p-size-unit').value}` : '';
   const j = await api('POST', '/api/products', {
-    name: $('p-name').value, manufacturer: $('p-man').value,
-    category: $('p-cat').value });
+    type: $('p-type').value, category: $('p-cat').value,
+    name: $('p-name').value, manufacturer: $('p-man').value, size });
   msg('msg-product', j.error || 'Saved ✓', !j.error);
-  if (!j.error) { $('p-name').value = ''; $('p-man').value = ''; load(); }
+  if (!j.error) { $('p-name').value = ''; $('p-size').value = ''; load(); }
 });
 
 window.delProduct = async (name, manufacturer) => {
@@ -765,15 +808,25 @@ window.delProduct = async (name, manufacturer) => {
   if (j.error) alert(j.error); load();
 };
 
-// admin product edit modal — all fields editable
+// edit product modal — all fields (household/global admin)
 let peOld = null;
+function parseSize(size) {
+  const m = String(size || '').match(/^([\d.]+)\s*(g|ml)$/i);
+  return m ? [m[1], m[2].toLowerCase()] : [String(size || ''), 'g'];
+}
 window.editProduct = async (name, manufacturer) => {
   const p = DATA.products.find(x => x.name === name && (x.manufacturer || '') === manufacturer);
   if (!p) return;
   peOld = { name: p.name, manufacturer: p.manufacturer || '' };
+  typeOptions($('pe-type'), p.type || (types()[0] && types()[0].id));
+  fillCatDatalist('pe-cat-list', $('pe-type').value);
+  $('pe-type').addEventListener('change', () => fillCatDatalist('pe-cat-list', $('pe-type').value));
+  $('pe-cat').value = p.category || '';
   $('pe-name').value = p.name;
   $('pe-man').value = p.manufacturer || '';
-  catOptions($('pe-cat'), p.category || '');
+  const [amt, unit] = parseSize(p.size);
+  $('pe-size').value = /^\d/.test(amt) ? amt : '';
+  $('pe-size-unit').value = unit;
   msg('msg-pe', '');
   $('pe-modal').hidden = false;
   $('pe-name').focus();
@@ -781,24 +834,26 @@ window.editProduct = async (name, manufacturer) => {
 $('pe-close').addEventListener('click', () => $('pe-modal').hidden = true);
 $('pe-cancel').addEventListener('click', () => $('pe-modal').hidden = true);
 $('pe-save').addEventListener('click', async () => {
+  const size = $('pe-size').value
+    ? `${$('pe-size').value} ${$('pe-size-unit').value}` : '';
   const j = await api('PUT', '/api/products', {
     old_name: peOld.name, old_manufacturer: peOld.manufacturer,
-    name: $('pe-name').value, manufacturer: $('pe-man').value,
-    category: $('pe-cat').value });
+    type: $('pe-type').value, category: $('pe-cat').value,
+    name: $('pe-name').value, manufacturer: $('pe-man').value, size });
   if (j.error) return msg('msg-pe', j.error, false);
   $('pe-modal').hidden = true;
   load();
 });
 
 // ---------- settings modal ----------
-$('b-admin').addEventListener('click', openAdmin);
-$('admin-close').addEventListener('click', () => $('admin-modal').hidden = true);
+$('b-settings').addEventListener('click', openSettings);
+$('settings-close').addEventListener('click', () => $('settings-modal').hidden = true);
 
 $('settings-tabs').addEventListener('click', e => {
   if (e.target.tagName !== 'BUTTON') return;
   document.querySelectorAll('#settings-tabs button').forEach(b =>
     b.classList.toggle('active', b === e.target));
-  document.querySelectorAll('#admin-modal .tabpane').forEach(p =>
+  document.querySelectorAll('#settings-modal .tabpane').forEach(p =>
     p.hidden = p.dataset.pane !== e.target.dataset.tab);
 });
 function showTab(name) {
@@ -806,8 +861,7 @@ function showTab(name) {
 }
 
 function fillCheckboxes(id, options, checkedList) {
-  const el = $(id);
-  el.innerHTML = options.map(o =>
+  $(id).innerHTML = options.map(o =>
     `<label><input type="checkbox" value="${esc(o)}" ` +
     (checkedList.includes(o) ? 'checked' : '') + `> ${esc(o)}</label>`).join('') ||
     '<span class="muted">(none yet)</span>';
@@ -820,54 +874,81 @@ function fillSelect(id, options, exclude) {
     .map(h => `<option value="${esc(h)}">${esc(h)}</option>`).join('');
 }
 
-async function openAdmin(keepTab) {
-  $('admin-modal').hidden = false;
-  const [u, h, c] = await Promise.all([
-    api('GET', '/api/admin/users'),
-    api('GET', '/api/admin/households'),
-    api('GET', '/api/admin/config')]);
-  if (u.error || h.error || c.error) { alert(u.error || h.error || c.error); return; }
-  ADMIN = { users: u.users, households: h.households, config: c };
-  renderUsers(u.users);
-  renderHouseholds(h.households, u.users);
-  renderAuth(c);
-  showTab(keepTab || 'users');
+async function openSettings(keepTab) {
+  $('settings-modal').hidden = false;
+  const role = USER.role;
+  // tab visibility
+  $('tab-users').hidden = !canEditProducts();
+  $('tab-auth').hidden = !isGlobalAdmin();
+  // households list (own households for users, all for global admin)
+  const h = await api('GET', '/api/admin/households');
+  ADMIN.households = h.households || [];
+  renderHouseholds(ADMIN.households);
+  // users list (admins only)
+  if (canEditProducts()) {
+    const u = await api('GET', '/api/admin/users');
+    if (u.error) alert(u.error);
+    else { ADMIN.users = u.users; ADMIN.viewer = u; renderUsers(u.users); }
+  }
+  // API key
+  $('apikey').textContent = USER.api_key || '';
+  // OIDC (global admin)
+  if (isGlobalAdmin()) {
+    const c = await api('GET', '/api/admin/config');
+    if (!c.error) renderAuth(c);
+  }
+  showTab(keepTab || 'general');
+}
+
+function roleLabel(u) {
+  if (u.role === 'global_admin') return '⭐ global admin';
+  if ((u.admin_households || []).length)
+    return '🏠 hh admin (' + u.admin_households.join(', ') + ')';
+  return 'user';
 }
 
 function renderUsers(users) {
   $('t-users').querySelector('tbody').innerHTML = users.map(x =>
     `<tr><td>${esc(x.username)}${x.oidc ? ' <span class="muted">(SSO)</span>' : ''}</td>
-     <td>${x.is_admin ? '✓' : ''}</td>
-     <td>${(x.households || []).map(hh => `<span class="pill">${esc(hh)}</span>`).join('')}</td>
+     <td>${esc(roleLabel(x))}</td>
+     <td>${(x.households || []).map(hh => `<span class="pill">${esc(hh)}</span>`).join('<br>')}</td>
      <td>
-       <button class="del" title="Toggle admin"
-         onclick="toggleAdmin('${esc(x.username)}',${!x.is_admin})">⭐</button>
-       <button class="del" title="Edit households"
-         onclick="editUserHouseholds('${esc(x.username)}')">🏠</button>
-       <button class="del" title="Delete user"
-         onclick="delUser('${esc(x.username)}')">✕</button>
+       <button class="del" title="Edit user"
+         onclick="editUser('${esc(x.username)}')">✎</button>
+       ${isGlobalAdmin() ? `<button class="del" title="Delete user"
+         onclick="delUser('${esc(x.username)}')">✕</button>` : ''}
      </td></tr>`).join('');
-  fillCheckboxes('nu-households', ADMIN.households, ['default']);
+  // household choices for the create-user form
+  const choices = isGlobalAdmin()
+    ? [...new Set([...ADMIN.households, ...listAllHouseholdsFromUsers()])]
+    : (USER.admin_households || []);
+  fillCheckboxes('nu-households', choices, []);
+  $('nu-global-wrap').hidden = !isGlobalAdmin();
 }
 
-function renderHouseholds(households, users) {
-  $('hh-list').innerHTML = households.map(hh => {
-    const members = users.filter(u => (u.households || []).includes(hh))
-      .map(u => esc(u.username)).join(', ') || '<span class="muted">no users</span>';
-    return `<div class="row"><span class="pill" style="font-size:.85rem">${esc(hh)}</span>
-      <span class="muted">${members}</span></div>`;
-  }).join('');
+function listAllHouseholdsFromUsers() {
+  return [...new Set(ADMIN.users.flatMap(u => u.households || []))];
+}
 
-  fillCheckboxes('hh-users', users.map(u => u.username), []);
-  fillSelect('hh-del', households, null);
-  fillSelect('mig-from', households, null);
-  fillSelect('mig-to', households, null);
-  $('mig-to').value = households[0] || '';
-  $('mig-from').value = households[1] || households[0] || '';
+function renderHouseholds(households) {
+  const members = hh => (ADMIN.users || [])
+    .filter(u => (u.households || []).includes(hh))
+    .map(u => esc(u.username)).join('<br>') || '<span class="muted">no users</span>';
+  const list = isGlobalAdmin() ? households : (USER.households || []);
+  $('hh-list').innerHTML = list.map(hh =>
+    `<div class="line"><span class="pill" style="font-size:.85rem">${esc(hh)}</span>
+      <span class="muted">${members(hh)}</span></div>`).join('');
+  fillCheckboxes('hh-users', (ADMIN.users || []).map(u => u.username), []);
+  fillSelect('hh-del', isGlobalAdmin() ? households : [], null);
+  fillSelect('mig-from', list, null);
+  fillSelect('mig-to', list, null);
+  $('mig-to').value = list[0] || '';
+  $('mig-from').value = list[1] || list[0] || '';
+  $('hh-admin-section').hidden = !isGlobalAdmin() && !(USER.admin_households || []).length;
+  $('hh-del-btn').hidden = !isGlobalAdmin();
 }
 
 function renderAuth(c) {
-  $('apikey').textContent = c.api_key;
   const o = c.oidc;
   $('o-issuer').value = o.issuer || '';
   $('o-client').value = o.client_id || '';
@@ -877,48 +958,77 @@ function renderAuth(c) {
   $('o-auto').checked = c.oidc_auto_create;
 }
 
-// ---- users tab actions ----
-window.toggleAdmin = async (username, make) => {
-  const j = await api('PUT', '/api/admin/users', { username, is_admin: make });
-  if (j.error) alert(j.error); openAdmin('users');
-};
-window.editUserHouseholds = async username => {
+// ---- edit user modal ----
+let euTarget = null;
+window.editUser = async username => {
   const u = ADMIN.users.find(x => x.username === username);
-  $('eh-title').textContent = 'Households for ' + username;
-  fillCheckboxes('eh-list', ADMIN.households, u.households || []);
-  $('eh-save').onclick = async () => {
-    const j = await api('PUT', '/api/admin/users', {
-      username, households: checkedOf('eh-list') });
-    if (j.error) return msg('msg-eh', j.error, false);
-    $('hh-modal').hidden = true;
-    openAdmin('users');
-  };
-  $('hh-modal').hidden = false;
+  if (!u) return;
+  euTarget = u;
+  $('eu-title').textContent = 'Edit ' + u.username;
+  $('eu-global-section').hidden = !isGlobalAdmin();
+  $('eu-global').checked = u.role === 'global_admin';
+  const hhChoices = isGlobalAdmin()
+    ? [...new Set([...ADMIN.households, ...listAllHouseholdsFromUsers()])]
+    : (USER.admin_households || []);
+  fillCheckboxes('eu-households', hhChoices, u.households || []);
+  fillCheckboxes('eu-admin-households',
+    isGlobalAdmin() ? (u.households || []) : hhChoices, u.admin_households || []);
+  $('eu-pass').value = '';
+  msg('msg-eu', '');
+  $('eu-modal').hidden = false;
 };
-$('eh-close').addEventListener('click', () => $('hh-modal').hidden = true);
+$('eu-close').addEventListener('click', () => $('eu-modal').hidden = true);
+$('eu-cancel').addEventListener('click', () => $('eu-modal').hidden = true);
+$('eu-save').addEventListener('click', async () => {
+  const body = { username: euTarget.username,
+                 households: checkedOf('eu-households'),
+                 admin_households: checkedOf('eu-admin-households') };
+  if (isGlobalAdmin()) body.role = $('eu-global').checked ? 'global_admin' : 'user';
+  if ($('eu-pass').value) body.password = $('eu-pass').value;
+  const j = await api('PUT', '/api/admin/users', body);
+  if (j.error) return msg('msg-eu', j.error, false);
+  $('eu-modal').hidden = true;
+  openSettings('users');
+});
+
 window.delUser = async username => {
   if (!confirm(`Delete user ${username}?`)) return;
   const j = await api('DELETE', '/api/admin/users/' + encodeURIComponent(username));
-  if (j.error) alert(j.error); openAdmin('users');
+  if (j.error) alert(j.error); openSettings('users');
 };
 
-$('nu-add').addEventListener('click', async () => {
-  const j = await api('POST', '/api/admin/users', {
-    username: $('nu-user').value, password: $('nu-pass').value,
-    is_admin: $('nu-admin').checked,
-    households: checkedOf('nu-households') });
-  msg('msg-admin-users', j.error || 'User created ✓', !j.error);
-  if (!j.error) { $('nu-user').value = ''; $('nu-pass').value = ''; openAdmin('users'); }
+$('nu-add').addEventListener('click', () => {
+  // reuse the create-user modal flow: simple prompt-based creation is avoided;
+  // create directly from the inline form
+  (async () => {
+    const body = { username: $('nu-user').value, password: $('nu-pass').value,
+                   households: checkedOf('nu-households') };
+    if (isGlobalAdmin() && $('nu-global').checked) body.role = 'global_admin';
+    const j = await api('POST', '/api/admin/users', body);
+    msg('msg-admin-users', j.error || 'User created ✓', !j.error);
+    if (!j.error) { $('nu-user').value = ''; $('nu-pass').value = ''; openSettings('users'); }
+  })();
 });
 
 // ---- households tab actions ----
 $('hh-add').addEventListener('click', async () => {
-  const j = await api('POST', '/api/admin/households',
-    { name: $('hh-new').value, users: checkedOf('hh-users') });
-  msg('msg-admin-hh', j.error || `Household '${j.household}' created ✓`, !j.error);
-  if (!j.error) $('hh-new').value = '';
-  openAdmin('households');
+  const body = { name: $('hh-new').value, users: checkedOf('hh-users') };
+  const j = await api('POST', '/api/admin/households', body);
+  msg('msg-admin-hh', j.error || `Household '${j.household}' created — you are its household admin ✓`, !j.error);
+  if (!j.error) { $('hh-new').value = ''; await relogin(); }
 });
+async function relogin() {
+  // refresh USER (households/admin rights may have changed)
+  BOOT = await api('GET', '/api/bootstrap');
+  USER = BOOT.user;
+  const vhh = USER.visible_households || [];
+  if (!vhh.includes(HH)) HH = vhh[0] || '';
+  const sel = $('household');
+  sel.innerHTML = vhh.map(h => `<option value="${esc(h)}">${esc(h)}</option>`).join('');
+  sel.value = HH;
+  openSettings('households');
+  if (HH) load();
+}
 
 $('hh-del-btn').addEventListener('click', async () => {
   const hh = $('hh-del').value;
@@ -926,7 +1036,7 @@ $('hh-del-btn').addEventListener('click', async () => {
   if (!confirm(`Delete household '${hh}' and ALL its inventory? This cannot be undone.`)) return;
   const j = await api('DELETE', '/api/admin/households/' + encodeURIComponent(hh));
   msg('msg-admin-hh-del', j.error || `Household '${hh}' deleted ✓`, !j.error);
-  openAdmin('households');
+  relogin();
 });
 
 $('mig-go').addEventListener('click', async () => {
@@ -936,7 +1046,7 @@ $('mig-go').addEventListener('click', async () => {
   if (!confirm(`Move ALL inventory items from '${from}' to '${to}'?`)) return;
   const j = await api('POST', '/api/admin/migrate', { from, to });
   msg('msg-admin-migrate', j.error || `Moved ${j.moved} item(s) from '${from}' to '${to}' ✓`, !j.error);
-  if (!j.error) openAdmin('households');
+  if (!j.error) load();
 });
 
 // ---- auth tab ----
@@ -948,6 +1058,16 @@ $('o-save').addEventListener('click', async () => {
     auto_create: $('o-auto').checked });
   msg('msg-admin-oidc', j.error || (j.oidc_enabled ? 'OIDC enabled ✓' : 'Saved (OIDC not active until issuer+client id set)'), !j.error);
   if (!j.error) boot();
+});
+
+// ---- API Key tab ----
+$('apikey-regen').addEventListener('click', async () => {
+  if (!confirm('Generate a new API key? The old key stops working immediately.')) return;
+  const j = await api('POST', '/api/me/apikey', {});
+  if (j.error) return msg('msg-apikey', j.error, false);
+  USER.api_key = j.api_key;
+  $('apikey').textContent = j.api_key;
+  msg('msg-apikey', 'New API key generated ✓', true);
 });
 
 // ---------- household switch ----------
