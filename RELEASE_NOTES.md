@@ -1,15 +1,13 @@
-# Release v2.4.1
+# Release v2.4.2
 
-Bugfix release for v2.4.
+Bugfix release for v2.4 / v2.4.1.
 
 ## Fixed
 
-- **Blank page after login.** A missing `id` on the "Create user" button caused a
-  script error at page load, which stopped the entire app from rendering. The
-  page now loads normally again.
-- **Product list migration.** On startup, v2.4 could move the shared product list
-  into a household folder and leave an empty global list behind, losing all your
-  products. Migration now merges every existing product source (old flat
-  `products.csv` and per-household copies) into the global list, deduplicating
-  on name + manufacturer. Your products survive the v2.4 upgrade.
-- The "All" chip in the Household inventory now renders with a capital "A".
+- **SSO behind bot-protection (Cloudflare etc.).** The server's outbound OIDC
+  requests (discovery, token exchange, userinfo) used Python's default
+  `Python-urllib` User-Agent, which bot-protection layers such as Cloudflare
+  Bot Fight Mode block with a 403 — breaking SSO login with an
+  "OIDC discovery failed … HTTP Error 403" error. All outbound OIDC requests
+  now send a browser-like User-Agent, so SSO works without any changes to
+  your reverse proxy or Cloudflare configuration.

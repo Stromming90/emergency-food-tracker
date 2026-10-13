@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.4)
+Emergency Food Storage Tracker â Web UI server (v2.4)
 =====================================================
 Zero-dependency web server (Python stdlib only).
 
@@ -43,6 +43,15 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 PRODUCTS_CSV = os.path.join(DATA_DIR, "products.csv")   # global product list
 PORT = int(os.environ.get("PORT", "4500"))
 
+# v2.4.2: outbound OIDC requests use a browser-like User-Agent so that
+# bot-protection layers in front of OIDC providers (e.g. Cloudflare
+# Bot Fight Mode, which blocks "Python-urllib") do not break SSO.
+OIDC_HTTP_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"),
+    "Accept": "application/json, text/plain, */*",
+}
+
 ALERT_WINDOWS = {"6months": 180, "3months": 90, "1month": 30}
 # v2.4: type + category (sub-category) + size per product
 PRODUCTS_HEADER = ["name", "manufacturer", "type", "category", "size", "added_date"]
@@ -65,7 +74,7 @@ FOOD_TYPES = [
                     "beans in tomato sauce", "chickpeas", "lentils", "corn", "peas",
                     "beetroot", "potatoes", "carrots",
                     "canned fish (tuna, mackerel, sardines, herring)", "canned fruit",
-                    "applesauce", "berry purée"]},
+                    "applesauce", "berry purÃ©e"]},
     {"id": "protein_sources", "label": "Protein",
      "storage": "pantry", "shelf_life_months": [6, 24],
      "categories": ["peanut butter", "nut butters", "nuts", "seeds", "powdered milk",
@@ -109,12 +118,12 @@ def parse_date(s):
 
 def slugify(s):
     s = (s or "").strip().lower()
-    s = re.sub(r"[^a-z0-9åäö\-_]+", "-", s, flags=re.UNICODE)
+    s = re.sub(r"[^a-z0-9Ã¥Ã¤Ã¶\-_]+", "-", s, flags=re.UNICODE)
     return s.strip("-")
 
 
 def valid_name(s):
-    return bool(re.fullmatch(r"[\w\s.,'’\-()åäöÅÄÖéèàü0-9]*", s or "", re.UNICODE))
+    return bool(re.fullmatch(r"[\w\s.,'â\-()Ã¥Ã¤Ã¶ÃÃÃÃ©Ã¨Ã Ã¼0-9]*", s or "", re.UNICODE))
 
 
 def load_json(path, default):
@@ -175,7 +184,8 @@ def oidc_discovery(oidc):
     base = oidc["issuer"].rstrip("/")
     url = base + "/.well-known/openid-configuration"
     try:
-        with urllib.request.urlopen(url, timeout=10) as r:
+        req = urllib.request.Request(url, headers=OIDC_HTTP_HEADERS)
+        with urllib.request.urlopen(req, timeout=10) as r:
             doc = json.loads(r.read().decode())
         eps = {"authorize": doc["authorization_endpoint"],
                "token": doc["token_endpoint"],
@@ -352,7 +362,7 @@ def user_admin_households(user):
 # ======================= households =======================
 
 def household_dir(household):
-    if not re.fullmatch(r"[a-z0-9åäö\-_]+", household):
+    if not re.fullmatch(r"[a-z0-9Ã¥Ã¤Ã¶\-_]+", household):
         raise ValueError("Invalid household name.")
     return os.path.join(DATA_DIR, "households", household)
 
@@ -584,7 +594,7 @@ def update_quantity(household, item_id, quantity):
     except (TypeError, ValueError):
         raise ValueError("Quantity must be a whole number.")
     if quantity < 1:
-        raise ValueError("Quantity must be at least 1. Use the ✕ button to remove an item.")
+        raise ValueError("Quantity must be at least 1. Use the â button to remove an item.")
     inv = read_csv(inv_path)
     for r in inv:
         if r["id"] == str(item_id):
@@ -868,11 +878,13 @@ class Handler(BaseHTTPRequestHandler):
             "client_id": oidc["client_id"], "client_secret": oidc.get("client_secret", ""),
         }).encode()
         req = urllib.request.Request(eps["token"], data=data,
-                                     headers={"Content-Type": "application/x-www-form-urlencoded"})
+                                     headers={**OIDC_HTTP_HEADERS,
+                                              "Content-Type": "application/x-www-form-urlencoded"})
         with urllib.request.urlopen(req, timeout=10) as r:
             tok = json.loads(r.read().decode())
         req2 = urllib.request.Request(eps["userinfo"],
-                                      headers={"Authorization": "Bearer " + tok["access_token"]})
+                                      headers={**OIDC_HTTP_HEADERS,
+                                               "Authorization": "Bearer " + tok["access_token"]})
         with urllib.request.urlopen(req2, timeout=10) as r:
             info = json.loads(r.read().decode())
         username = info.get("preferred_username") or info.get("email") or info.get("sub", "")
@@ -1199,3 +1211,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
