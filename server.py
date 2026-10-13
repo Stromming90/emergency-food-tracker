@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker â Web UI server (v2.4)
+Emergency Food Storage Tracker — Web UI server (v2.4)
 =====================================================
 Zero-dependency web server (Python stdlib only).
+
+v2.5:
+- Authentication tab: enable/disable SSO login, optional password login lockout
+- Editable type/category options (global admin)
+- Inventory view carries type/category/size from the product
+- Household membership editable after creation
+- Refreshed default food types/categories
 
 v2.4:
 - Product model: type (curated), category (sub-category), size
@@ -60,26 +67,27 @@ INVENTORY_HEADER = ["id", "product", "manufacturer", "best_before", "quantity", 
 SESSIONS = {}
 SESSION_TTL = 7 * 24 * 3600
 
-# v2.4: curated food TYPES (was "categories" in v2.3). Each type carries
-# suggested sub-categories ("categories") for products.
-FOOD_TYPES = [
+# v2.5: default food TYPES. Instances may customise these via the admin
+# UI; the live set is stored in config.json ("food_types"). Each type
+# carries suggested sub-categories ("categories") for products.
+DEFAULT_FOOD_TYPES = [
     {"id": "dry_staples_carbs", "label": "Dry staples & carbohydrates",
      "storage": "cool_dry", "shelf_life_months": [12, 36],
      "categories": ["pasta", "rice", "couscous", "flour", "oats", "rolled grains",
-                    "crispbread", "flatbread", "potato flakes", "muesli", "granola",
-                    "porridge oats"]},
-    {"id": "canned_ready_foods", "label": "Canned & jarred ready foods",
+                    "crispbread", "flatbread", "potato flakes", "mashed potato powder",
+                    "muesli", "granola", "porridge oats"]},
+    {"id": "canned_ready_foods", "label": "Canned & jarred foods",
      "storage": "pantry", "shelf_life_months": [12, 48],
      "categories": ["ravioli", "canned soups", "chili", "stew", "baked beans",
                     "beans in tomato sauce", "chickpeas", "lentils", "corn", "peas",
-                    "beetroot", "potatoes", "carrots",
-                    "canned fish (tuna, mackerel, sardines, herring)", "canned fruit",
-                    "applesauce", "berry purÃ©e"]},
+                    "beetroot", "potatoes", "carrots", "sauce", "canned fruit",
+                    "applesauce", "berry purée"]},
     {"id": "protein_sources", "label": "Protein",
      "storage": "pantry", "shelf_life_months": [6, 24],
      "categories": ["peanut butter", "nut butters", "nuts", "seeds", "powdered milk",
                     "UHT milk", "plant-based milk", "cured meats (salami, jerky)",
-                    "hard cheese (wax/vacuum)", "eggs", "shelf-stable tofu"]},
+                    "hard cheese (wax/vacuum)", "eggs", "shelf-stable tofu",
+                    "canned fish (tuna, mackerel, sardines, herring)"]},
     {"id": "fats_cooking", "label": "Fats & cooking",
      "storage": "cool_dry", "shelf_life_months": [6, 18],
      "categories": ["cooking oil", "olive oil", "butter", "ghee", "hard margarine",
@@ -89,7 +97,7 @@ FOOD_TYPES = [
      "categories": ["salt", "sugar", "honey", "jam"]},
     {"id": "beverages", "label": "Beverages",
      "storage": "cool_dry", "shelf_life_months": [12, 36],
-     "categories": ["coffee", "tea", "cocoa"]},
+     "categories": ["coffee", "tea", "chocolate powder", "water"]},
     {"id": "instant_meals", "label": "Instant meals (just add water)",
      "storage": "pantry", "shelf_life_months": [12, 36],
      "categories": ["freeze-dried meals", "cup noodles", "instant soups"]},
@@ -118,12 +126,17 @@ def parse_date(s):
 
 def slugify(s):
     s = (s or "").strip().lower()
-    s = re.sub(r"[^a-z0-9Ã¥Ã¤Ã¶\-_]+", "-", s, flags=re.UNICODE)
+    s = re.sub(r"[^a-z0-9åäö\-_]+", "-", s, flags=re.UNICODE)
     return s.strip("-")
 
 
 def valid_name(s):
-    return bool(re.fullmatch(r"[\w\s.,'â\-()Ã¥Ã¤Ã¶ÃÃÃÃ©Ã¨Ã Ã¼0-9]*", s or "", re.UNICODE))
+    return bool(re.fullmatch(r"[\w\s.,'’\-()åäöÅÄÖéèàü0-9]*", s or "", re.UNICODE))
+
+
+def valid_label(s):
+    # type/category labels may additionally contain & and :
+    return bool(re.fullmatch(r"[\w\s.,'’\-()/&:åäöÅÄÖéèàü0-9]*", s or "", re.UNICODE))
 
 
 def load_json(path, default):
@@ -169,13 +182,36 @@ def get_config():
     if os.environ.get("OIDC_ADMIN_EMAILS"):
         oidc["admin_emails"] = [e.strip() for e in os.environ["OIDC_ADMIN_EMAILS"].split(",") if e.strip()]
     oidc.setdefault("admin_emails", [])
+    auth = cfg.setdefault("auth", {})
+    auth.setdefault("sso_login", True)        # v2.5: SSO login toggle
+    auth.setdefault("password_login", True)   # v2.5: password login toggle
     save_json(CONFIG_FILE, cfg)
     return cfg
 
 
-def oidc_enabled():
+def get_food_types():
+    """Live food types (config.json, falls back to the built-in defaults)."""
+    types = get_config().get("food_types")
+    if isinstance(types, list) and types:
+        return types
+    return DEFAULT_FOOD_TYPES
+
+
+def oidc_configured():
     oidc = get_config()["oidc"]
     return bool(oidc.get("issuer") and oidc.get("client_id"))
+
+
+def oidc_enabled():
+    """True if SSO login is available (configured AND not switched off)."""
+    return oidc_configured() and get_config()["auth"].get("sso_login", True) is not False
+
+
+def password_login_enabled():
+    """Password login can only be disabled while SSO login is available."""
+    if not oidc_enabled():
+        return True
+    return get_config()["auth"].get("password_login", True) is not False
 
 
 def oidc_discovery(oidc):
@@ -362,7 +398,7 @@ def user_admin_households(user):
 # ======================= households =======================
 
 def household_dir(household):
-    if not re.fullmatch(r"[a-z0-9Ã¥Ã¤Ã¶\-_]+", household):
+    if not re.fullmatch(r"[a-z0-9åäö\-_]+", household):
         raise ValueError("Invalid household name.")
     return os.path.join(DATA_DIR, "households", household)
 
@@ -395,7 +431,7 @@ def ensure_household(household):
 def normalize_product_row(p):
     """Map a row from any older header (v2.0-v2.3) onto PRODUCTS_HEADER."""
     old = p.get("category", "")
-    if any(t["id"] == old for t in FOOD_TYPES):
+    if any(t["id"] == old for t in get_food_types()):
         ftype, category = old, ""      # v2.3 type id -> type
     else:
         ftype, category = "", old      # free text -> keep as category
@@ -479,7 +515,7 @@ def add_product(name, manufacturer, ftype, category, size):
     for field in (name, manufacturer, category, size):
         if not valid_name(field):
             raise ValueError("Product fields contain invalid characters.")
-    if ftype and not any(t["id"] == ftype for t in FOOD_TYPES):
+    if ftype and not any(t["id"] == ftype for t in get_food_types()):
         raise ValueError("Unknown type.")
     products = read_csv(PRODUCTS_CSV)
     if any(p["name"].lower() == name.lower()
@@ -511,7 +547,7 @@ def update_product(old_name, old_manufacturer, name, manufacturer, ftype, catego
     for field in (name, manufacturer, category, size):
         if not valid_name(field):
             raise ValueError("Product fields contain invalid characters.")
-    if ftype and not any(t["id"] == ftype for t in FOOD_TYPES):
+    if ftype and not any(t["id"] == ftype for t in get_food_types()):
         raise ValueError("Unknown type.")
     new_key = (name.lower(), manufacturer.lower())
     if new_key != old_key and any((p["name"].lower(), p.get("manufacturer", "").lower()) == new_key
@@ -594,7 +630,7 @@ def update_quantity(household, item_id, quantity):
     except (TypeError, ValueError):
         raise ValueError("Quantity must be a whole number.")
     if quantity < 1:
-        raise ValueError("Quantity must be at least 1. Use the â button to remove an item.")
+        raise ValueError("Quantity must be at least 1. Use the ✕ button to remove an item.")
     inv = read_csv(inv_path)
     for r in inv:
         if r["id"] == str(item_id):
@@ -633,12 +669,19 @@ def migrate_items(from_hh, to_hh, item_ids=None):
 
 def inventory_view(household):
     ensure_household(household)
+    # v2.5: join each item with its product's type/category/size
+    products = {}
+    for p in read_csv(PRODUCTS_CSV):
+        products[(p["name"].lower(), p.get("manufacturer", "").lower())] = p
     rows = []
     for r in read_csv(os.path.join(household_dir(household), "inventory.csv")):
         best = parse_date(r["best_before"])
         days = (best - today()).days
+        p = products.get((r["product"].lower(), r.get("manufacturer", "").lower()), {})
         rows.append({"id": int(r["id"]), "product": r["product"],
                      "manufacturer": r.get("manufacturer", ""),
+                     "type": p.get("type", ""), "category": p.get("category", ""),
+                     "size": p.get("size", ""),
                      "best_before": r["best_before"], "quantity": int(r["quantity"]),
                      "days_left": days, "level": alert_level(best)})
     rows.sort(key=lambda r: r["days_left"])
@@ -747,8 +790,13 @@ class Handler(BaseHTTPRequestHandler):
     def household_of(self, user, body=None):
         parsed = urllib.parse.urlparse(self.path)
         qs = urllib.parse.parse_qs(parsed.query)
-        household = ((body or {}).get("household")
-                     or qs.get("household", [None])[0] or "default")
+        household = (body or {}).get("household") or qs.get("household", [None])[0]
+        if not household:
+            # v2.5: no implicit 'default' household — fall back to the
+            # user's own first household instead.
+            household = (user.get("households") or [None])[0]
+        if not household:
+            raise ValueError("You are not assigned to any household yet.")
         if not allowed_household(user, household):
             raise AuthError(f"No access to household '{household}'.")
         return household
@@ -768,8 +816,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(200, {
                     "configured": user_count() > 0,
                     "oidc_enabled": oidc_enabled(),
+                    "password_login": password_login_enabled(),
                     "oidc_name": get_config()["oidc"].get("issuer", "").rstrip("/").split("//")[-1],
-                    "version": "2.4",
+                    "version": "2.5",
                     "user": ({**user_public(user),
                               "api_key": user.get("api_key", ""),
                               "visible_households": user_households(user) if not is_global_admin(user)
@@ -780,7 +829,7 @@ class Handler(BaseHTTPRequestHandler):
                 h = self.household_of(user)
                 self.reply(200, {"products": products_view(),
                                  "inventory": inventory_view(h),
-                                 "types": FOOD_TYPES,
+                                 "types": get_food_types(),
                                  "today": today().isoformat(),
                                  "household": h,
                                  "households": list_households()})
@@ -827,11 +876,17 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/admin/config":
                 require_global_admin(self)
                 oidc = get_config()["oidc"]
+                cfg = get_config()
                 self.reply(200, {"oidc": {k: oidc.get(k, "")
                                           for k in ("issuer", "client_id", "client_secret",
                                                     "redirect_uri", "scopes", "admin_emails")},
                                  "oidc_auto_create": oidc.get("auto_create", True),
-                                 "oidc_enabled": oidc_enabled()})
+                                 "oidc_configured": oidc_configured(),
+                                 "oidc_enabled": oidc_enabled(),
+                                 "password_login": password_login_enabled(),
+                                 "auth": cfg.get("auth", {}),
+                                 "types": get_food_types(),
+                                 "default_types": DEFAULT_FOOD_TYPES})
             # ---------- homepage widget ----------
             elif path == "/api/widget":
                 key = qs.get("key", [""])[0]
@@ -928,6 +983,8 @@ class Handler(BaseHTTPRequestHandler):
                 token = create_session(body["username"].strip())
                 self.reply(200, {"ok": True}, set_cookie=self.session_cookie(token))
             elif path == "/api/login":
+                if not password_login_enabled():
+                    raise ValueError("Password login is disabled. Please use SSO.")
                 user = find_user(body.get("username", ""))
                 if not user or not user.get("password") or not check_password(user, body.get("password", "")):
                     raise ValueError("Wrong username or password.")
@@ -1031,9 +1088,61 @@ class Handler(BaseHTTPRequestHandler):
                     oidc["auto_create"] = bool(body["auto_create"])
                 if isinstance(body.get("admin_emails"), list):
                     oidc["admin_emails"] = [str(e).strip() for e in body["admin_emails"]]
+                # v2.5 auth toggles
+                if "sso_login" in body:
+                    cfg["auth"]["sso_login"] = bool(body["sso_login"])
+                if "password_login" in body:
+                    want_off = not bool(body["password_login"])
+                    # only honoured while SSO is configured and enabled,
+                    # so an instance can never lock itself out.
+                    if want_off and not (oidc.get("issuer") and oidc.get("client_id")
+                                         and cfg["auth"].get("sso_login", True)):
+                        raise ValueError("Password login can only be disabled when "
+                                         "SSO is configured and enabled.")
+                    cfg["auth"]["password_login"] = not want_off
                 oidc.pop("endpoints", None)
                 save_json(CONFIG_FILE, cfg)
-                self.reply(200, {"ok": True, "oidc_enabled": oidc_enabled()})
+                self.reply(200, {"ok": True, "oidc_enabled": oidc_enabled(),
+                                 "password_login": password_login_enabled()})
+            elif path == "/api/admin/types":
+                # v2.5: global admins may customise the type/category options
+                require_global_admin(self)
+                types_in = body.get("types")
+                if not isinstance(types_in, list) or not types_in:
+                    raise ValueError("types must be a non-empty list.")
+                clean = []
+                seen_ids = set()
+                for t in types_in:
+                    if not isinstance(t, dict):
+                        raise ValueError("Each type must be an object.")
+                    tid = slugify(t.get("id", ""))
+                    label = str(t.get("label", "")).strip()
+                    cats = t.get("categories")
+                    if not tid or tid in seen_ids:
+                        raise ValueError("Each type needs a unique id.")
+                    seen_ids.add(tid)
+                    if not label or not valid_label(label):
+                        raise ValueError(f"Invalid label for type '{tid}'.")
+                    if cats is None:
+                        cats = []
+                    if not isinstance(cats, list):
+                        raise ValueError(f"categories for '{tid}' must be a list.")
+                    cats = [str(c).strip() for c in cats if str(c).strip()]
+                    for c in cats:
+                        if not valid_label(c):
+                            raise ValueError(f"Invalid category '{c}' in '{tid}'.")
+                    months = t.get("shelf_life_months", [12, 36])
+                    if (not isinstance(months, list) or len(months) != 2
+                            or not all(isinstance(m, int) and m > 0 for m in months)):
+                        months = [12, 36]
+                    clean.append({"id": tid, "label": label,
+                                  "storage": t.get("storage") or "pantry",
+                                  "shelf_life_months": months,
+                                  "categories": cats})
+                cfg = get_config()
+                cfg["food_types"] = clean
+                save_json(CONFIG_FILE, cfg)
+                self.reply(200, {"ok": True, "types": clean})
             else:
                 self.reply(404, {"error": "not found"})
         except AuthError as e:
@@ -1117,6 +1226,33 @@ class Handler(BaseHTTPRequestHandler):
                     raise AuthError("Household admin only.")
                 save_users(users)
                 self.reply(200, {"ok": True})
+            elif re.fullmatch(r"/api/admin/households/([^/]+)", path):
+                # v2.5: edit household membership (add/remove assigned users)
+                user = require_user(self)
+                hh = urllib.parse.unquote(re.fullmatch(
+                    r"/api/admin/households/([^/]+)", path).group(1))
+                if hh not in list_households():
+                    raise ValueError("Household not found.")
+                if not is_household_admin(user, hh):
+                    raise AuthError("You are not the admin of this household.")
+                if not isinstance(body.get("users"), list):
+                    raise ValueError("users must be a list.")
+                users = get_users()
+                wanted = {u.lower() for u in body["users"] if str(u).strip()}
+                changed = 0
+                for u in users["users"]:
+                    member = hh in u.get("households", [])
+                    should = u["username"].lower() in wanted
+                    if should and not member:
+                        u.setdefault("households", []).append(hh)
+                        changed += 1
+                    elif member and not should:
+                        u["households"] = [x for x in u["households"] if x != hh]
+                        u["admin_households"] = [x for x in u.get("admin_households", [])
+                                                 if x != hh]
+                        changed += 1
+                save_users(users)
+                self.reply(200, {"ok": True, "changed": changed})
             else:
                 self.reply(404, {"error": "not found"})
         except AuthError as e:
@@ -1204,7 +1340,7 @@ def main():
     get_users()   # normalizes roles + generates per-user API keys
     get_config()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.4: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v2.5: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 
