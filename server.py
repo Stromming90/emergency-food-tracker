@@ -382,6 +382,18 @@ def ensure_household(household):
         write_csv(path, INVENTORY_HEADER, rows)
 
 
+def normalize_product_row(p):
+    """Map a row from any older header (v2.0-v2.3) onto PRODUCTS_HEADER."""
+    old = p.get("category", "")
+    if any(t["id"] == old for t in FOOD_TYPES):
+        ftype, category = old, ""      # v2.3 type id -> type
+    else:
+        ftype, category = "", old      # free text -> keep as category
+    return {"name": p.get("name", ""), "manufacturer": p.get("manufacturer", ""),
+            "type": ftype, "category": category, "size": p.get("size", ""),
+            "added_date": p.get("added_date", "")}
+
+
 def migrate_products_csv():
     """v2.3 (category id) -> v2.4 (type + sub-category + size) header."""
     if not os.path.exists(PRODUCTS_CSV):
@@ -390,17 +402,45 @@ def migrate_products_csv():
         current = next(csv.reader(f), None) or []
     if current == PRODUCTS_HEADER:
         return
-    rows = []
-    for p in csv.DictReader(open(PRODUCTS_CSV, newline="", encoding="utf-8")):
-        old = p.get("category", "")
-        if any(t["id"] == old for t in FOOD_TYPES):
-            ftype, category = old, ""      # v2.3 type id -> type
-        else:
-            ftype, category = "", old      # free text -> keep as category
-        rows.append({"name": p.get("name", ""), "manufacturer": p.get("manufacturer", ""),
-                     "type": ftype, "category": category, "size": p.get("size", ""),
-                     "added_date": p.get("added_date", "")})
+    rows = [normalize_product_row(p)
+            for p in csv.DictReader(open(PRODUCTS_CSV, newline="", encoding="utf-8"))]
     write_csv(PRODUCTS_CSV, PRODUCTS_HEADER, rows)
+
+
+def ensure_global_products():
+    """Merge per-household / legacy flat products.csv into the global list.
+
+    v2.4 keeps one shared product list at DATA_DIR/products.csv. Older
+    versions stored it either flat at DATA_DIR/products.csv (v2.0-v2.3)
+    or per household under households/<name>/products.csv (v2.2). Merge
+    all sources into the global file (deduped on name+manufacturer),
+    then remove the household copies.
+    """
+    if not os.path.exists(PRODUCTS_CSV):
+        write_csv(PRODUCTS_CSV, PRODUCTS_HEADER, [])
+    merged = read_csv(PRODUCTS_CSV)
+    seen = {(p.get("name", "").lower(), p.get("manufacturer", "").lower())
+            for p in merged}
+    sources = []
+    old_flat = os.path.join(DATA_DIR, "products.csv")
+    if os.path.abspath(old_flat) != os.path.abspath(PRODUCTS_CSV):
+        sources.append(old_flat)
+    hdir = os.path.join(DATA_DIR, "households")
+    if os.path.isdir(hdir):
+        for h in sorted(os.listdir(hdir)):
+            sources.append(os.path.join(hdir, h, "products.csv"))
+    for path in sources:
+        if not os.path.exists(path):
+            continue
+        for p in read_csv(path):
+            row = normalize_product_row(p)
+            key = (row["name"].lower(), row["manufacturer"].lower())
+            if key in seen or not key[0]:
+                continue
+            seen.add(key)
+            merged.append(row)
+        os.remove(path)
+    write_csv(PRODUCTS_CSV, PRODUCTS_HEADER, merged)
 
 
 # ======================= model =======================
@@ -1131,19 +1171,22 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     os.makedirs(DATA_DIR, exist_ok=True)
     os.makedirs(CONFIG_DIR, exist_ok=True)
-    # migrate old flat layout into households/default/
-    for fname in ("products.csv", "inventory.csv"):
-        old = os.path.join(DATA_DIR, fname)
-        if os.path.exists(old):
-            ensure_household("default")
-            new = os.path.join(household_dir("default"), fname)
-            os.makedirs(os.path.dirname(new), exist_ok=True)
-            if os.path.exists(new):
-                os.remove(old)
-            else:
-                os.replace(old, new)
+    # migrate pre-2.2 flat inventory.csv into households/default/
+    # (products.csv stays global and is merged by ensure_global_products)
+    old_inv = os.path.join(DATA_DIR, "inventory.csv")
+    if os.path.exists(old_inv):
+        ensure_household("default")
+        new = os.path.join(household_dir("default"), "inventory.csv")
+        os.makedirs(os.path.dirname(new), exist_ok=True)
+        if os.path.exists(new):
+            os.remove(old_inv)
+        else:
+            os.replace(old_inv, new)
     # v2.3 category column -> v2.4 type/category/size columns
     migrate_products_csv()
+    # v2.4: the product list is global again; merge any per-household
+    # products.csv (and the old flat-layout copy) back into it.
+    ensure_global_products()
     if not os.path.exists(PRODUCTS_CSV):
         write_csv(PRODUCTS_CSV, PRODUCTS_HEADER, [])
     get_users()   # normalizes roles + generates per-user API keys

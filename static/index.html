@@ -320,6 +320,7 @@
       </div>
       <div class="muted">Households for the new user:</div>
       <div class="checkbox-list lines" id="nu-households"></div>
+      <div class="row"><button id="nu-add" class="ghost">Create user</button></div>
       <div class="msg" id="msg-admin-users"></div>
     </div>
 
@@ -593,7 +594,7 @@ async function load() {
   render();
 }
 
-const LEVEL_LABEL = { ok: 'Fine', '6months': 'Less than 6 months',
+const LEVEL_LABEL = { all: 'All', ok: 'Fine', '6months': 'Less than 6 months',
                       '3months': 'Less than 3 months', '1month': 'Less than 1 month',
                       expired: 'Expired' };
 
