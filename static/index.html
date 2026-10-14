@@ -108,12 +108,13 @@
 
   /* settings tabs */
   .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border);
-          margin-bottom: 14px; flex-wrap: wrap; }
+          margin-bottom: 10px; flex-wrap: wrap; }
   .tabs button { background: transparent; color: var(--muted); border: none;
                  border-bottom: 2px solid transparent; border-radius: 0;
                  padding: 8px 14px; }
   .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
-  .tabpane { margin-top: 10px; }
+  .tabpane { margin-top: 8px; }
+  .tabpane h3 { margin: 12px 0 4px; }
   .pill { display: inline-block; background: var(--border); border-radius: 999px;
           padding: 2px 10px; font-size: .78rem; margin: 2px 4px 2px 0; }
   .form-col { display: flex; flex-direction: column; gap: 8px; }
@@ -121,8 +122,13 @@
 
   /* one-per-line lists (households / users) */
   .lines label, .lines .line { display: flex; gap: 8px; align-items: center;
-                                margin: 4px 0; }
+                                margin: 2px 0; }
   .lines label { font-size: .9rem; }
+  /* one checkbox per row (authentication options) */
+  .check-row { display: flex; justify-content: space-between; align-items: center;
+               gap: 12px; margin: 4px 0; font-size: .9rem;
+               border-bottom: 1px solid var(--border); padding: 4px 0; }
+  .check-row:last-of-type { border-bottom: none; }
 
   .qty-input { width: 64px; padding: 3px 6px; font-size: .85rem; }
 </style>
@@ -151,7 +157,7 @@
       <input id="l-pass" type="password" placeholder="Password" autocomplete="current-password" required>
       <button type="submit">Log in</button>
       <button type="button" id="b-oidc" class="ghost" hidden style="margin-top:8px">
-        Log in with SSO</button>
+        Login with SSO</button>
       <p class="muted" id="l-nopass" hidden style="text-align:center;margin:10px 0 0">
         Password login is disabled — use the SSO button above.</p>
       <div class="msg" id="msg-auth"></div>
@@ -363,11 +369,11 @@
       <table id="t-users"><thead>
         <tr><th>User</th><th>Role</th><th>Households</th><th></th></tr></thead><tbody></tbody></table>
 
-      <h3 style="margin:18px 0 6px">Create user</h3>
+      <h3>Create user</h3>
       <div class="row">
         <input id="nu-user" placeholder="Username" style="max-width:160px">
         <input id="nu-pass" type="password" placeholder="Password" style="max-width:150px">
-        <label class="muted" id="nu-global-wrap"><input type="checkbox" id="nu-global"> global admin</label>
+        <label class="muted" id="nu-global-wrap"><input type="checkbox" id="nu-global"> Global admin</label>
       </div>
       <div class="muted">Households for the new user:</div>
       <div class="checkbox-list lines" id="nu-households"></div>
@@ -380,7 +386,7 @@
       <h3 style="margin:0 0 6px">Households</h3>
       <div id="hh-list" class="lines"></div>
 
-      <h3 style="margin:18px 0 6px">Create household</h3>
+      <h3>Create household</h3>
       <p class="muted" style="margin:2px 0">Any user can create a household — you
       become its household admin. Global admins can also assign other users to it.</p>
       <div class="row">
@@ -391,7 +397,7 @@
       <div class="checkbox-list lines" id="hh-users"></div>
       <div class="msg" id="msg-admin-hh"></div>
 
-      <h3 style="margin:18px 0 6px">Edit household</h3>
+      <h3>Edit household</h3>
       <p class="muted" style="margin:2px 0">Change which users are assigned to
       an existing household. Unticking everyone unassigns all users.</p>
       <div class="row">
@@ -402,7 +408,7 @@
       <div class="msg" id="msg-admin-hh-edit"></div>
 
       <div id="hh-admin-section">
-        <h3 style="margin:18px 0 6px">Delete household</h3>
+        <h3>Delete household</h3>
         <div class="row">
           <select id="hh-del" style="max-width:220px"></select>
           <button id="hh-del-btn" class="ghost">Delete</button>
@@ -411,7 +417,7 @@
         inventory and unassigns it from users. Users are never deleted.</p>
         <div class="msg" id="msg-admin-hh-del"></div>
 
-        <h3 style="margin:18px 0 6px">Migrate inventory</h3>
+        <h3>Migrate inventory</h3>
         <p class="muted" style="margin:4px 0">Move all inventory from one household
         to another — household admins of the source household or global admins.</p>
         <div class="row">
@@ -426,15 +432,21 @@
     <!-- ============ Authentication tab ============ -->
     <div class="tabpane" data-pane="auth" hidden>
       <h3 style="margin:0 0 6px">OIDC / SSO (Keycloak, Authentik, Authelia…)</h3>
+      <div class="row"><input id="o-name" placeholder="Display name (shown on the login button), e.g. Keycloak" style="min-width:260px"></div>
       <div class="row"><input id="o-issuer" placeholder="Issuer URL, e.g. https://keycloak/realms/myrealm" style="min-width:260px"></div>
       <div class="row"><input id="o-client" placeholder="Client ID" style="min-width:180px">
         <input id="o-secret" type="password" placeholder="Client secret" style="min-width:180px"></div>
       <div class="row"><input id="o-redirect" placeholder="Redirect URI (optional, auto if blank)" style="min-width:260px"></div>
-      <div class="row"><input id="o-admins" placeholder="Global admin emails (comma-sep)" style="min-width:260px"></div>
-      <label class="muted"><input type="checkbox" id="o-auto" checked> auto-create unknown users on first SSO login</label>
-      <label class="muted"><input type="checkbox" id="o-sso" checked> enable SSO login (show the single sign-on button)</label>
-      <label class="muted"><input type="checkbox" id="o-nopass"> disable username/password login (only available when SSO is configured and enabled)</label>
-      <div class="row"><button id="o-save">Save OIDC settings</button></div>
+      <div class="row"><input id="o-admins" placeholder="Global admin emails (comma-separated)" style="min-width:260px"></div>
+      <div class="check-row"><span>Auto-create unknown users on first SSO login</span>
+        <input type="checkbox" id="o-auto" checked></div>
+      <div class="check-row"><span>Enable SSO login (show the single sign-on button)</span>
+        <input type="checkbox" id="o-sso" checked></div>
+      <div class="check-row"><span>Disable username/password login</span>
+        <input type="checkbox" id="o-nopass"></div>
+      <p class="muted" style="font-size:.8rem;margin:2px 0 6px">Password login can
+      only be disabled while SSO is configured and enabled.</p>
+      <div class="row"><button id="o-save">Save authentication settings</button></div>
       <div class="msg" id="msg-admin-oidc"></div>
     </div>
 
@@ -512,7 +524,7 @@
       <button class="del" id="eu-close" title="Close">✕</button>
     </div>
     <div id="eu-global-section">
-      <label class="muted"><input type="checkbox" id="eu-global"> global admin</label>
+      <label class="muted"><input type="checkbox" id="eu-global"> Global admin</label>
     </div>
     <div class="muted">Households — tick "member" to assign, and "admin" to make
     them household admin there:</div>
@@ -608,6 +620,7 @@ function showAuth() {
   if (BOOT?.configured) {
     $('f-login').hidden = false;
     $('b-oidc').hidden = !BOOT.oidc_enabled;
+    $('b-oidc').textContent = 'Login with ' + (BOOT.oidc_name || 'SSO');
     const noPass = BOOT.password_login === false;
     $('l-user').hidden = noPass; $('l-pass').hidden = noPass;
     const btn = document.querySelector('#f-login button:not(.ghost)');
@@ -1049,7 +1062,7 @@ async function openSettings(keepTab) {
 }
 
 function roleLabel(u) {
-  if (u.role === 'global_admin') return '⭐ global admin';
+  if (u.role === 'global_admin') return '⭐ Global admin';
   if ((u.admin_households || []).length)
     return '🏠 hh admin (' + u.admin_households.join(', ') + ')';
   return 'user';
@@ -1100,6 +1113,7 @@ function renderHouseholds(households) {
 function renderAuth(c) {
   const o = c.oidc;
   const authCfg = c.auth || {};
+  $('o-name').value = o.name || '';
   $('o-issuer').value = o.issuer || '';
   $('o-client').value = o.client_id || '';
   $('o-secret').value = o.client_secret || '';
@@ -1275,6 +1289,7 @@ $('o-sso').addEventListener('change', () => {
 });
 $('o-save').addEventListener('click', async () => {
   const j = await api('POST', '/api/admin/oidc', {
+    name: $('o-name').value,
     issuer: $('o-issuer').value, client_id: $('o-client').value,
     client_secret: $('o-secret').value, redirect_uri: $('o-redirect').value,
     admin_emails: $('o-admins').value.split(',').map(s => s.trim()).filter(Boolean),

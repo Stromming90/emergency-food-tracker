@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.4)
+Emergency Food Storage Tracker — Web UI server (v2.6)
 =====================================================
 Zero-dependency web server (Python stdlib only).
+
+v2.6:
+- OIDC display name: configurable, shown on the SSO login button
+- Authentication tab: name field + one checkbox per row
+- Users/Households/Authentication settings: tidier layout
 
 v2.5:
 - Authentication tab: enable/disable SSO login, optional password login lockout
@@ -817,8 +822,8 @@ class Handler(BaseHTTPRequestHandler):
                     "configured": user_count() > 0,
                     "oidc_enabled": oidc_enabled(),
                     "password_login": password_login_enabled(),
-                    "oidc_name": get_config()["oidc"].get("issuer", "").rstrip("/").split("//")[-1],
-                    "version": "2.5",
+                    "oidc_name": get_config()["oidc"].get("name") or "SSO",
+                    "version": "2.6",
                     "user": ({**user_public(user),
                               "api_key": user.get("api_key", ""),
                               "visible_households": user_households(user) if not is_global_admin(user)
@@ -878,7 +883,7 @@ class Handler(BaseHTTPRequestHandler):
                 oidc = get_config()["oidc"]
                 cfg = get_config()
                 self.reply(200, {"oidc": {k: oidc.get(k, "")
-                                          for k in ("issuer", "client_id", "client_secret",
+                                          for k in ("name", "issuer", "client_id", "client_secret",
                                                     "redirect_uri", "scopes", "admin_emails")},
                                  "oidc_auto_create": oidc.get("auto_create", True),
                                  "oidc_configured": oidc_configured(),
@@ -1081,7 +1086,7 @@ class Handler(BaseHTTPRequestHandler):
                 require_global_admin(self)
                 cfg = get_config()
                 oidc = cfg["oidc"]
-                for k in ("issuer", "client_id", "client_secret", "redirect_uri", "scopes"):
+                for k in ("name", "issuer", "client_id", "client_secret", "redirect_uri", "scopes"):
                     if k in body:
                         oidc[k] = str(body[k]).strip()
                 if "auto_create" in body:
@@ -1340,7 +1345,7 @@ def main():
     get_users()   # normalizes roles + generates per-user API keys
     get_config()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.5: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v2.6: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 
