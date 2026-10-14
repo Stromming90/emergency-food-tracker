@@ -34,6 +34,10 @@ public class MainActivity extends Activity {
     private static final int REQ_CAMERA = 100;
     private static final String PREFS = "eft";
     private static final String KEY_URL = "server_url";
+    private static final String APP_VERSION = "2.7.2";
+    // Custom deep-link scheme: an OIDC flow that somehow ends up in the
+    // browser redirects back into the app via win.strommingflix.eft://…
+    private static final String DL_SCHEME = "win.strommingflix.eft";
 
     private WebView web;
     private PermissionRequest pendingPerm;
@@ -46,10 +50,42 @@ public class MainActivity extends Activity {
         serverUrl = prefs.getString(KEY_URL, null);
         if (serverUrl == null || serverUrl.isEmpty()) showSetup();
         else showWeb();
+        handleOidcLink(getIntent());
         // Camera is needed for barcode scanning.
         if (checkSelfPermission(Manifest.permission.CAMERA)
                 != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_CAMERA);
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        handleOidcLink(intent);
+    }
+
+    /**
+     * If we were opened via the deep link
+     * win.strommingflix.eft://oidc/callback?code=…&state=…, replay it against
+     * the server inside the WebView: the code/state exchange happens
+     * server-side, so the session cookie lands in the app.
+     */
+    private void handleOidcLink(Intent intent) {
+        if (intent == null || intent.getData() == null) return;
+        Uri data = intent.getData();
+        if (!DL_SCHEME.equals(data.getScheme()) || serverUrl == null) return;
+        Uri server = Uri.parse(serverUrl);
+        Uri target = new Uri.Builder()
+                .scheme(server.getScheme())
+                .encodedAuthority(server.getEncodedAuthority())
+                .path("/api/oidc/callback")
+                .encodedQuery(data.getEncodedQuery())
+                .build();
+        if (web != null) {
+            web.loadUrl(target.toString());
+        } else {
+            showWeb();
+            if (web != null) web.loadUrl(target.toString());
         }
     }
 
@@ -106,6 +142,15 @@ public class MainActivity extends Activity {
         box.addView(sub);
         box.addView(input);
         box.addView(go);
+
+        TextView ver = new TextView(this);
+        ver.setText("App v" + APP_VERSION);
+        ver.setTextSize(12);
+        ver.setGravity(Gravity.CENTER);
+        ver.setPadding(0, 24, 0, 0);
+        ver.setTextColor(0xFF6B7A85);
+        box.addView(ver);
+
         setContentView(box);
     }
 
@@ -118,7 +163,7 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         // Token used by the web app to enable the scan button.
-        s.setUserAgentString(s.getUserAgentString() + " EFT-Android/2.7.1");
+        s.setUserAgentString(s.getUserAgentString() + " EFT-Android/2.7.2");
 
         web.setWebViewClient(new WebViewClient() {
             @Override

@@ -19,7 +19,7 @@ $BT/aapt2 link -o $OUT/base.apk \
   -I "$JAR" \
   --manifest $SRC/AndroidManifest.xml \
   --min-sdk-version 24 --target-sdk-version 34 \
-  --version-code 28 --version-name 2.7.1 \
+  --version-code 29 --version-name 2.7.2 \
   $OUT/res.zip
 
 echo "[3/7] javac"
