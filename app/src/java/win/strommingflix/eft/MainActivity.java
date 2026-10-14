@@ -66,15 +66,20 @@ public class MainActivity extends Activity {
         title.setTextSize(22);
         title.setGravity(Gravity.CENTER);
         title.setPadding(0, 0, 0, 8);
+        title.setTextColor(0xFFF2F5F7);
 
         TextView sub = new TextView(this);
         sub.setText("Enter the address of your tracker server:");
         sub.setGravity(Gravity.CENTER);
         sub.setPadding(0, 0, 0, 24);
+        sub.setTextColor(0xFF9AA7B0);
 
         final EditText input = new EditText(this);
         input.setHint("https://eft.example.com");
         input.setText("https://");
+        input.setTextColor(0xFFF2F5F7);
+        input.setHintTextColor(0xFF6B7A85);
+        input.setHighlightColor(0xFF3B82F6);
 
         Button go = new Button(this);
         go.setText("Open");
@@ -113,14 +118,17 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         // Token used by the web app to enable the scan button.
-        s.setUserAgentString(s.getUserAgentString() + " EFT-Android/2.7");
+        s.setUserAgentString(s.getUserAgentString() + " EFT-Android/2.7.1");
 
         web.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
                 Uri uri = req.getUrl();
-                String host = Uri.parse(serverUrl).getHost();
-                if (host != null && host.equals(uri.getHost())) return false;
+                String scheme = uri.getScheme() == null ? "" : uri.getScheme();
+                // Keep ALL http/https navigation inside the WebView — including
+                // the SSO/OIDC provider (e.g. Keycloak) — so the login session
+                // cookie stays with the app and it returns to the app when done.
+                if (scheme.equals("http") || scheme.equals("https")) return false;
                 try {
                     startActivity(new Intent(Intent.ACTION_VIEW, uri));
                 } catch (Exception ignored) { }
