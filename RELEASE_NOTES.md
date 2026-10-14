@@ -1,17 +1,20 @@
-# v2.7.3 — Verifiable APK download
+# v2.7.4 — Cache-proof APK download
 
-## Versioned download filename
-- The **Get for Android** download is now named
-  `emergency-food-tracker-2.7.3.apk` (previously the fixed name
-  `emergency-food-tracker.apk`, which let Android silently re-open an
-  older download). If the file on your phone doesn't carry **2.7.3** in
-  its name, it is not this build — delete old downloads and re-download.
-- The APK is served with `Cache-Control: no-store` so neither the phone
-  browser nor a proxy can hand back a stale copy.
+## Why the phone still downloaded the old APK
+Every download used the same URL (`/app.apk`), so a cache between the phone
+and the server (browser cache / Cloudflare / proxy) could hand back the stale
+response from before the update — which is why the PC got the new versioned
+file while the phone did not.
 
-## Reminder (app fixes are in the APK since 2.7.1/2.7.2)
-- SSO/Keycloak login stays inside the app and returns you to it.
-- Setup screen has light text on the dark background and shows
-  **App v2.7.3** under the Open button — check it after installing.
-- App versionCode 30, signed with the same key as all 2.7.x builds, so it
-  installs over an existing install.
+## What's fixed
+- The **Get for Android** button now points at a **versioned URL**:
+  `/app-2.7.3.apk`. A unique URL per app version cannot be served from any
+  cache — the phone always gets the real current file.
+- The page fetches the current app version from `/app-version.txt`
+  (uncached) and rewrites the download link on every login, so the link
+  always matches the bundled app.
+- The old `/app.apk` URL still works (with the versioned filename and
+  `no-store`), for anything that kept the old link.
+
+The app binary itself is unchanged from 2.7.3 (App v2.7.3, versionCode 30).
+Web app version: 2.7.4.

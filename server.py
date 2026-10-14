@@ -829,9 +829,21 @@ class Handler(BaseHTTPRequestHandler):
             if path in ("/", "/index.html"):
                 with open(os.path.join(STATIC_DIR, "index.html"), "rb") as f:
                     self.reply(200, f.read(), "text/html; charset=utf-8")
-            elif path == "/app.apk":
+            elif path == "/app-version.txt":
+                # v2.7.4: current bundled app version (for the download link)
+                try:
+                    with open(os.path.join(APP_DIR, "app", "app-version.txt"),
+                              "r", encoding="utf-8") as f:
+                        self.reply(200, f.read().strip().encode("utf-8"),
+                                   "text/plain; charset=utf-8")
+                except FileNotFoundError:
+                    self.reply(404, {"error": "app version unknown"})
+            elif re.fullmatch(r"/app(?:-[\w.]+)?\.apk", path):
                 # v2.7: serve the bundled Android app (stored base64 in the
                 # repo so it survives text-only pushes; decoded once, cached).
+                # v2.7.4: also answers versioned paths like /app-2.7.3.apk —
+                # a unique URL per app version, which no cache (browser,
+                # Cloudflare, proxy) can serve stale.
                 global APP_APK_BYTES
                 try:
                     if APP_APK_BYTES is None:
@@ -878,7 +890,7 @@ class Handler(BaseHTTPRequestHandler):
                     "oidc_enabled": oidc_enabled(),
                     "password_login": password_login_enabled(),
                     "oidc_name": get_config()["oidc"].get("name") or "SSO",
-                    "version": "2.7.3",
+                    "version": "2.7.4",
                     "user": ({**user_public(user),
                               "api_key": user.get("api_key", ""),
                               "visible_households": user_households(user) if not is_global_admin(user)

@@ -681,6 +681,10 @@ function showApp() {
   $('auth').hidden = true; $('app').hidden = false;
   $('tab-barcodes').hidden = !isGlobalAdmin();
   $('b-scan').hidden = !IN_APP;
+  // v2.7.4: versioned download URL — unique per app version, so no cache
+  // (browser / Cloudflare / proxy) can hand back a stale APK.
+  fetch('/app-version.txt', { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(
+    v => { $('b-android').href = '/app-' + (v.trim() || 'dev') + '.apk'; }).catch(() => {});
   const vhh = USER.visible_households || USER.households || [];
   const sel = $('household');
   sel.innerHTML = vhh.map(h => `<option value="${esc(h)}">${esc(h)}</option>`).join('');
