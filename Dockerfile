@@ -4,6 +4,7 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY server.py .
 COPY static/ ./static/
+COPY app/ ./app/
 
 # /data   -> global products.csv + household inventory CSVs
 # /config -> users.json, config.json (api key, OIDC settings)

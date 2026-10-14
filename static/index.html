@@ -131,6 +131,9 @@
   .check-row:last-of-type { border-bottom: none; }
 
   .qty-input { width: 64px; padding: 3px 6px; font-size: .85rem; }
+  @media (max-width: 640px) {
+    .android-label { display: none; }   /* keep the 📱 icon only on phones */
+  }
 </style>
 </head>
 <body>
@@ -171,6 +174,9 @@
     <span class="spacer"></span>
     <label class="hh-label" for="household">Household:</label>
     <select id="household" title="Household"></select>
+    <a class="iconbtn" id="b-android" href="/app.apk" title="Download the Android app"
+       style="text-decoration:none;white-space:nowrap">📱 <span class="android-label">Get for Android</span></a>
+    <button class="iconbtn" id="b-scan" hidden title="Scan a barcode">📷</button>
     <button class="iconbtn" id="b-settings" title="Settings">⚙️</button>
     <button class="iconbtn" id="b-theme" title="Theme: light / dark / auto">🌙</button>
     <button class="iconbtn" id="b-logout" title="Log out">⏻</button>
@@ -180,6 +186,7 @@
   <div class="main-tabs" id="main-tabs">
     <button data-tab="household" class="active">🏠 Household</button>
     <button data-tab="products">📋 Products</button>
+    <button data-tab="barcodes" id="tab-barcodes" hidden>🏷 Barcodes</button>
     <button data-tab="info">ℹ️ Information</button>
   </div>
 
@@ -282,6 +289,25 @@
   </div>
 
   <!-- ============ Information tab ============ -->
+  <div data-pane="barcodes" hidden>
+    <div class="card" style="max-width:760px">
+      <h2>Barcodes</h2>
+      <p class="muted">Tie scanned barcode IDs to products in the global product
+      list. Scanning a mapped barcode in the Android app instantly selects the
+      product in the purchase form.</p>
+      <table id="t-barcodes"><thead>
+        <tr><th>Barcode</th><th>Product</th><th></th></tr></thead><tbody></tbody></table>
+      <h3>Map a barcode</h3>
+      <form id="f-barcode" class="row" style="flex-wrap:wrap">
+        <input id="bc-code" placeholder="Barcode ID" style="flex:0;min-width:150px"
+               inputmode="numeric" required>
+        <select id="bc-product" required style="flex:2;min-width:180px"></select>
+        <button type="submit">Map</button>
+      </form>
+      <div class="msg" id="msg-barcodes"></div>
+    </div>
+  </div>
+
   <div data-pane="info" hidden>
     <div class="card" style="max-width:760px">
       <h2>Emergency food &amp; water at home — one simple recommendation</h2>
@@ -482,6 +508,21 @@
   </div>
 </div>
 
+<!-- barcode scan modal (Android app only) -->
+<div class="modal-bg" id="scan-modal" hidden>
+  <div class="modal" style="max-width:400px">
+    <div class="row" style="justify-content:space-between">
+      <h2>Scan barcode</h2>
+      <button class="del" id="scan-close" title="Close">✕</button>
+    </div>
+    <video id="scan-video" autoplay playsinline
+           style="width:100%;border-radius:8px;background:#000"></video>
+    <p class="muted" id="scan-status" style="text-align:center;margin:6px 0 0">
+      Point the camera at a barcode…</p>
+    <div class="msg" id="msg-scan"></div>
+  </div>
+</div>
+
 <!-- edit product modal (household/global admin) -->
 <div class="modal-bg" id="pe-modal" hidden>
   <div class="modal" style="max-width:440px">
@@ -638,6 +679,8 @@ function showAuth() {
 
 function showApp() {
   $('auth').hidden = true; $('app').hidden = false;
+  $('tab-barcodes').hidden = !isGlobalAdmin();
+  $('b-scan').hidden = !IN_APP;
   const vhh = USER.visible_households || USER.households || [];
   const sel = $('household');
   sel.innerHTML = vhh.map(h => `<option value="${esc(h)}">${esc(h)}</option>`).join('');
@@ -722,6 +765,7 @@ function render() {
   renderLevelChips();
   renderInventory();
   renderProducts();
+  loadBarcodes();
 }
 
 // ---------- purchase form (household tab) ----------
@@ -891,6 +935,117 @@ $('f-buy').addEventListener('submit', async e => {
     quantity: $('b-qty').value || 1 });
   msg('msg-buy', j.error || 'Saved ✓', !j.error);
   if (!j.error) load();
+});
+
+// ---------- barcode scanning (Android app only) ----------
+const IN_APP = /EFT-Android/i.test(navigator.userAgent);
+let scanStream = null, scanLoop = false;
+
+async function handleBarcode(code) {
+  const j = await api('GET', '/api/barcode?code=' + encodeURIComponent(code));
+  if (j.product) {
+    closeScan();
+    document.querySelector('#main-tabs button[data-tab="household"]').click();
+    buyType = ''; $('b-type').value = ''; renderBuyProducts();
+    $('b-product').value = j.product.name + '\u0001' + (j.product.manufacturer || '');
+    if (!$('b-product').value) renderBuyProducts(),
+      $('b-product').value = j.product.name + '\u0001' + (j.product.manufacturer || '');
+    if (!$('b-date').value)
+      suggestBestBefore(j.product.name, j.product.manufacturer || '');
+    $('b-qty').value = 1;
+    msg('msg-buy', `Scanned: ${j.product.name}` +
+      (j.product.manufacturer ? ` — ${j.product.manufacturer}` : '') +
+      ' — check the date &amp; quantity, then press Buy.', true);
+  } else {
+    msg('msg-scan', `Barcode ${code} is not mapped yet.` +
+      (isGlobalAdmin() ? '' : ' Ask a global admin to map it.'), false);
+    if (isGlobalAdmin()) {
+      closeScan();
+      document.querySelector('#main-tabs button[data-tab="barcodes"]').click();
+      $('bc-code').value = code;
+      renderBarcodeProductOptions();
+      msg('msg-barcodes', `Barcode ${code} scanned — pick a product and press Map.`, true);
+    }
+  }
+}
+
+async function openScan() {
+  $('scan-modal').hidden = false;
+  msg('msg-scan', '');
+  $('scan-status').textContent = 'Point the camera at a barcode…';
+  try {
+    scanStream = await navigator.mediaDevices.getUserMedia(
+      { video: { facingMode: { ideal: 'environment' } } });
+    $('scan-video').srcObject = scanStream;
+  } catch (e) {
+    $('scan-status').textContent = 'Camera unavailable: ' + (e.message || e);
+    return;
+  }
+  if (!('BarcodeDetector' in window)) {
+    $('scan-status').textContent =
+      'Barcode scanning is not supported on this device — please update the Android System WebView.';
+    return;
+  }
+  const detector = new BarcodeDetector({
+    formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'qr_code'] });
+  scanLoop = true;
+  const video = $('scan-video');
+  const detect = async () => {
+    if (!scanLoop) return;
+    try {
+      const codes = await detector.detect(video);
+      const raw = codes.length && codes[0].rawValue;
+      if (raw) { scanLoop = false; handleBarcode(raw.trim()); return; }
+    } catch (e) { /* keep scanning */ }
+    setTimeout(detect, 250);
+  };
+  detect();
+}
+function closeScan() {
+  scanLoop = false;
+  $('scan-modal').hidden = true;
+  if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
+  $('scan-video').srcObject = null;
+}
+$('b-scan').addEventListener('click', openScan);
+$('scan-close').addEventListener('click', closeScan);
+
+// ---------- barcodes tab (global admin) ----------
+let BARCODES = [];
+async function loadBarcodes() {
+  if (!isGlobalAdmin()) return;
+  const j = await api('GET', '/api/admin/barcodes');
+  BARCODES = j.barcodes || [];
+  renderBarcodes();
+}
+function renderBarcodes() {
+  $('t-barcodes').querySelector('tbody').innerHTML =
+    BARCODES.map(b => `<tr><td><code>${esc(b.barcode)}</code></td>
+      <td>${esc(b.name)}${b.manufacturer ? ` <span class="muted">— ${esc(b.manufacturer)}</span>` : ''}</td>
+      <td><button class="del" title="Remove mapping"
+        onclick="bcDel('${esc(b.barcode)}')">✕</button></td></tr>`).join('')
+    || '<tr><td colspan="3" class="muted">No barcodes mapped yet.</td></tr>';
+  renderBarcodeProductOptions();
+}
+function renderBarcodeProductOptions() {
+  $('bc-product').innerHTML = DATA.products.map(p =>
+    `<option value="${esc(p.name)}\u0001${esc(p.manufacturer || '')}">` +
+    esc(p.name + (p.manufacturer ? ' — ' + p.manufacturer : '')) + '</option>').join('');
+}
+window.bcDel = async code => {
+  if (!confirm(`Remove the mapping for barcode ${code}?`)) return;
+  const j = await api('DELETE', '/api/admin/barcodes/' + encodeURIComponent(code));
+  if (j.error) return msg('msg-barcodes', j.error, false);
+  loadBarcodes();
+};
+$('f-barcode').addEventListener('submit', async e => {
+  e.preventDefault();
+  const [name, manufacturer] = ($('bc-product').value || '').split('\u0001');
+  const code = $('bc-code').value.trim();
+  const j = await api('POST', '/api/admin/barcodes', {
+    barcode: code, name, manufacturer: manufacturer || '' });
+  msg('msg-barcodes', j.error || `Barcode ${code} mapped to ${name} ✓`, !j.error);
+  if (!j.error) { $('bc-code').value = ''; loadBarcodes(); }
 });
 
 // ---------- products tab ----------

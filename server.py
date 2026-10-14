@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.6)
+Emergency Food Storage Tracker — Web UI server (v2.7)
 =====================================================
 Zero-dependency web server (Python stdlib only).
+
+v2.7:
+- Android app (WebView) with camera barcode scanning, served at /app.apk
+- Barcodes main tab (global admin): map scanned barcode IDs to products
+- /api/barcode lookup + /api/admin/barcodes CRUD
+- "Get for Android" download button on the site
 
 v2.6:
 - OIDC display name: configurable, shown on the SSO login button
@@ -32,6 +38,7 @@ Environment variables:
   OIDC_*     optional OIDC overrides
 """
 
+import base64
 import csv
 import hashlib
 import hmac
@@ -50,6 +57,8 @@ APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(APP_DIR, "data"))
 CONFIG_DIR = os.environ.get("CONFIG_DIR", os.path.join(APP_DIR, "config"))
 STATIC_DIR = os.path.join(APP_DIR, "static")
+APP_APK_B64 = os.path.join(APP_DIR, "app", "eft-app.apk.b64")  # v2.7 android app
+APP_APK_BYTES = None                      # decoded once on first request
 USERS_FILE = os.path.join(CONFIG_DIR, "users.json")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 PRODUCTS_CSV = os.path.join(DATA_DIR, "products.csv")   # global product list
@@ -190,6 +199,7 @@ def get_config():
     auth = cfg.setdefault("auth", {})
     auth.setdefault("sso_login", True)        # v2.5: SSO login toggle
     auth.setdefault("password_login", True)   # v2.5: password login toggle
+    cfg.setdefault("barcodes", {})            # v2.7: barcode -> product mappings
     save_json(CONFIG_FILE, cfg)
     return cfg
 
@@ -815,6 +825,39 @@ class Handler(BaseHTTPRequestHandler):
             if path in ("/", "/index.html"):
                 with open(os.path.join(STATIC_DIR, "index.html"), "rb") as f:
                     self.reply(200, f.read(), "text/html; charset=utf-8")
+            elif path == "/app.apk":
+                # v2.7: serve the bundled Android app (stored base64 in the
+                # repo so it survives text-only pushes; decoded once, cached).
+                global APP_APK_BYTES
+                try:
+                    if APP_APK_BYTES is None:
+                        with open(APP_APK_B64, "r", encoding="utf-8") as f:
+                            APP_APK_BYTES = base64.b64decode("".join(f.read().split()))
+                except FileNotFoundError:
+                    self.reply(404, {"error": "app.apk not bundled"})
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type",
+                                  "application/vnd.android.package-archive")
+                self.send_header("Content-Disposition",
+                                 'attachment; filename="emergency-food-tracker.apk"')
+                self.send_header("Content-Length", str(len(APP_APK_BYTES)))
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+                self.wfile.write(APP_APK_BYTES)
+            elif path == "/api/barcode":
+                # v2.7: barcode lookup for the app's scan feature
+                user = require_user(self)
+                code = (qs.get("code", [""])[0] or "").strip()
+                hit = get_config().get("barcodes", {}).get(code)
+                if hit:
+                    prod = next((p for p in read_csv(PRODUCTS_CSV)
+                                 if p["name"].lower() == hit.get("name", "").lower()
+                                 and p.get("manufacturer", "").lower()
+                                 == hit.get("manufacturer", "").lower()), None)
+                    self.reply(200, {"found": True, "product": prod})
+                else:
+                    self.reply(200, {"found": False})
             elif path == "/api/bootstrap":
                 user = current_user(self)
                 get_config()
@@ -823,7 +866,7 @@ class Handler(BaseHTTPRequestHandler):
                     "oidc_enabled": oidc_enabled(),
                     "password_login": password_login_enabled(),
                     "oidc_name": get_config()["oidc"].get("name") or "SSO",
-                    "version": "2.6",
+                    "version": "2.7",
                     "user": ({**user_public(user),
                               "api_key": user.get("api_key", ""),
                               "visible_households": user_households(user) if not is_global_admin(user)
@@ -892,6 +935,14 @@ class Handler(BaseHTTPRequestHandler):
                                  "auth": cfg.get("auth", {}),
                                  "types": get_food_types(),
                                  "default_types": DEFAULT_FOOD_TYPES})
+            elif path == "/api/admin/barcodes":
+                # v2.7: list barcode -> product mappings
+                require_global_admin(self)
+                bc = get_config().get("barcodes", {})
+                self.reply(200, {"barcodes": [
+                    {"barcode": code, "name": v.get("name", ""),
+                     "manufacturer": v.get("manufacturer", "")}
+                    for code, v in bc.items()]})
             # ---------- homepage widget ----------
             elif path == "/api/widget":
                 key = qs.get("key", [""])[0]
@@ -1082,6 +1133,26 @@ class Handler(BaseHTTPRequestHandler):
                     raise AuthError("You are not the admin of the source household.")
                 moved = migrate_items(frm, to, body.get("item_ids"))
                 self.reply(200, {"ok": True, "moved": moved})
+            elif path == "/api/admin/barcodes":
+                # v2.7: map (or re-map) a scanned barcode to a global product
+                require_global_admin(self)
+                code = str(body.get("barcode", "")).strip()
+                name = str(body.get("name", "")).strip()
+                manufacturer = str(body.get("manufacturer", "")).strip()
+                if not code:
+                    raise ValueError("Please provide a barcode.")
+                prod = next((p for p in read_csv(PRODUCTS_CSV)
+                             if p["name"].lower() == name.lower()
+                             and p.get("manufacturer", "").lower()
+                             == manufacturer.lower()), None)
+                if not prod:
+                    raise ValueError("Unknown product. Add it to the product "
+                                     "list first.")
+                cfg = get_config()
+                cfg.setdefault("barcodes", {})[code] = {
+                    "name": prod["name"], "manufacturer": prod.get("manufacturer", "")}
+                save_json(CONFIG_FILE, cfg)
+                self.reply(200, {"ok": True, "barcode": code, "name": prod["name"]})
             elif path == "/api/admin/oidc":
                 require_global_admin(self)
                 cfg = get_config()
@@ -1314,6 +1385,18 @@ class Handler(BaseHTTPRequestHandler):
                 shutil.rmtree(household_dir(hh), ignore_errors=True)
                 self.reply(200, {"ok": True})
                 return
+            m = re.fullmatch(r"/api/admin/barcodes/([^/]+)", path)
+            if m:
+                # v2.7: remove a barcode mapping
+                require_global_admin(self)
+                code = urllib.parse.unquote(m.group(1))
+                cfg = get_config()
+                if code not in cfg.get("barcodes", {}):
+                    raise ValueError("Barcode not found.")
+                del cfg["barcodes"][code]
+                save_json(CONFIG_FILE, cfg)
+                self.reply(200, {"ok": True})
+                return
             self.reply(404, {"error": "not found"})
         except AuthError as e:
             self.reply(401, {"error": str(e)})
@@ -1345,7 +1428,7 @@ def main():
     get_users()   # normalizes roles + generates per-user API keys
     get_config()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.6: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v2.7: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 
