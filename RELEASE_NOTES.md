@@ -1,28 +1,17 @@
-# v2.7.2 — Android app: verify-build release + deep-link fallback
+# v2.7.3 — Verifiable APK download
 
-## Why your SSO still opened the browser
-The v2.7.1 fix only takes effect once the **new APK is actually installed**
-— the app on a phone keeps running the old build if the Docker image wasn't
-re-pulled or Android kept the previous install. The old v2.7 build is the one
-that hands Keycloak over to the browser.
+## Versioned download filename
+- The **Get for Android** download is now named
+  `emergency-food-tracker-2.7.3.apk` (previously the fixed name
+  `emergency-food-tracker.apk`, which let Android silently re-open an
+  older download). If the file on your phone doesn't carry **2.7.3** in
+  its name, it is not this build — delete old downloads and re-download.
+- The APK is served with `Cache-Control: no-store` so neither the phone
+  browser nor a proxy can hand back a stale copy.
 
-## What's in 2.7.2
-- **Version shown on the first-launch screen** ("App v2.7.2" under the Open
-  button) so you can instantly confirm which build your phone is running.
-  If it doesn't say 2.7.2, you're on the old app.
-- **Deep-link fallback:** the app now accepts the custom redirect URI
-  `win.strommingflix.eft://oidc/callback`. If an SSO login somehow ends up
-  in the external browser, the phone bounces straight back into the app and
-  finishes the login there (the code/state exchange happens server-side).
-  Optional — only needed if you set this as the OIDC Redirect URI in
-  Settings → Authentication (and register it in Keycloak).
-- Same signing key as before, so it installs over an existing install.
-
-## How to make sure you get the fixed app
-1. Dockge: **Pull images → Deploy** (so `/app.apk` serves the new build).
-2. On the phone: **uninstall** the old Food Tracker app.
-3. Open the site in the phone browser → **📱 Get for Android** → install.
-4. The first-launch screen must be readable (light text) and show
-   **App v2.7.2**.
-5. Log in with Keycloak — the login now happens inside the app and returns
-   you there, logged in.
+## Reminder (app fixes are in the APK since 2.7.1/2.7.2)
+- SSO/Keycloak login stays inside the app and returns you to it.
+- Setup screen has light text on the dark background and shows
+  **App v2.7.3** under the Open button — check it after installing.
+- App versionCode 30, signed with the same key as all 2.7.x builds, so it
+  installs over an existing install.

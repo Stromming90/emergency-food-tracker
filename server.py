@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.7)
+Emergency Food Storage Tracker — Web UI server (v2.7.3)
 =====================================================
 Zero-dependency web server (Python stdlib only).
+
+v2.7.3:
+- /app.apk download is versioned (emergency-food-tracker-<ver>.apk) and
+  served with no-store, so a stale APK can never be confused with a new one
 
 v2.7:
 - Android app (WebView) with camera barcode scanning, served at /app.apk
@@ -839,10 +843,18 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-Type",
                                   "application/vnd.android.package-archive")
+                # v2.7.3: version in the filename so a stale download is
+                # instantly recognisable on the phone.
+                try:
+                    with open(os.path.join(APP_DIR, "app", "app-version.txt"),
+                              "r", encoding="utf-8") as f:
+                        app_ver = f.read().strip() or "dev"
+                except FileNotFoundError:
+                    app_ver = "dev"
                 self.send_header("Content-Disposition",
-                                 'attachment; filename="emergency-food-tracker.apk"')
+                                 f'attachment; filename="emergency-food-tracker-{app_ver}.apk"')
                 self.send_header("Content-Length", str(len(APP_APK_BYTES)))
-                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(APP_APK_BYTES)
             elif path == "/api/barcode":
@@ -866,7 +878,7 @@ class Handler(BaseHTTPRequestHandler):
                     "oidc_enabled": oidc_enabled(),
                     "password_login": password_login_enabled(),
                     "oidc_name": get_config()["oidc"].get("name") or "SSO",
-                    "version": "2.7",
+                    "version": "2.7.3",
                     "user": ({**user_public(user),
                               "api_key": user.get("api_key", ""),
                               "visible_households": user_households(user) if not is_global_admin(user)
@@ -1428,7 +1440,7 @@ def main():
     get_users()   # normalizes roles + generates per-user API keys
     get_config()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.7: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v2.7.3: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 

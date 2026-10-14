@@ -34,7 +34,7 @@ public class MainActivity extends Activity {
     private static final int REQ_CAMERA = 100;
     private static final String PREFS = "eft";
     private static final String KEY_URL = "server_url";
-    private static final String APP_VERSION = "2.7.2";
+    private static final String APP_VERSION = "2.7.3";
     // Custom deep-link scheme: an OIDC flow that somehow ends up in the
     // browser redirects back into the app via win.strommingflix.eft://…
     private static final String DL_SCHEME = "win.strommingflix.eft";
@@ -163,7 +163,7 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         // Token used by the web app to enable the scan button.
-        s.setUserAgentString(s.getUserAgentString() + " EFT-Android/2.7.2");
+        s.setUserAgentString(s.getUserAgentString() + " EFT-Android/2.7.3");
 
         web.setWebViewClient(new WebViewClient() {
             @Override
