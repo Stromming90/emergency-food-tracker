@@ -183,7 +183,6 @@
   <div class="main-tabs" id="main-tabs">
     <button data-tab="household" class="active">🏠 Household</button>
     <button data-tab="products">📋 Products</button>
-    <button data-tab="barcodes" id="tab-barcodes" hidden>🏷 Barcodes</button>
     <button data-tab="types" id="tab-types-main" hidden>🗂 Types &amp; Categories</button>
     <button data-tab="info">ℹ️ Information</button>
   </div>
@@ -292,6 +291,7 @@
             <th class="sortable" data-key="type">Type<span class="arrow"></span></th>
             <th class="sortable" data-key="category">Category<span class="arrow"></span></th>
             <th class="sortable" data-key="size">Size<span class="arrow"></span></th>
+            <th>Barcode</th>
             <th></th>
           </tr>
           <tr class="filterrow">
@@ -300,55 +300,28 @@
             <th><input data-col="type" placeholder="Filter…" style="width:95%"></th>
             <th><input data-col="category" placeholder="Filter…" style="width:95%"></th>
             <th><input data-col="size" placeholder="Filter…" style="width:95%"></th>
+            <th><input data-col="barcodes" placeholder="Filter…" style="width:95%"></th>
             <th></th>
           </tr></thead>
         <tbody></tbody></table>
         <div class="empty" id="empty-products" hidden>No products yet.</div>
       </div>
     </div>
-  </div>
 
-  <!-- ============ Information tab ============ -->
-  <div data-pane="barcodes" hidden>
-    <div class="card" style="max-width:960px">
-      <h2>Barcodes</h2>
-      <p class="muted">Barcode → product reference list. Scanning a mapped
-      barcode in the app resolves the product instantly. Import a
-      pre-scanned country list in <b>Settings → Barcodes</b>, or add,
-      change or remove individual mappings in edit mode (global
-      admin).</p>
-      <div class="toolbar">
-        <span class="count" id="bc-count"></span>
-        <button id="bc-edit-btn" class="ghost" style="flex:0" hidden>✏️ Edit</button>
-        <span id="bc-edit-actions" hidden>
-          <button id="bc-confirm-btn" class="ghost" style="flex:0">Confirm changes</button>
-          <button id="bc-cancel-btn" class="ghost" style="flex:0">Cancel</button>
-        </span>
-        <span class="count" id="bc-pending"></span>
+    <div class="card" id="bc-import-card" hidden>
+      <h2>Barcode lists by country</h2>
+      <p class="muted">Use the below dropdown menu to add a pre-existing
+      list of scanned barcodes, sorted by country of purchase. The list is
+      added to your barcode mappings and to the global product list
+      (products that already exist are not duplicated). Each list can be
+      imported once; barcodes you remove afterwards stay removed. The
+      barcodes appear in the <b>Barcode</b> column of the product list —
+      press <b>✏️ Edit</b> to add or remove a product's barcodes.</p>
+      <div class="row">
+        <select id="bc-country" style="max-width:260px"></select>
+        <button id="bc-import" class="ghost">Add list</button>
       </div>
-      <div class="scroll">
-        <table id="t-barcodes"><thead>
-          <tr>
-            <th>Barcode</th><th>Product</th><th>Brand</th><th>Size</th><th></th>
-          </tr>
-          <tr class="filterrow">
-            <th><input data-col="barcode" placeholder="Filter…" style="width:95%"></th>
-            <th><input data-col="name" placeholder="Filter…" style="width:95%"></th>
-            <th><input data-col="manufacturer" placeholder="Filter…" style="width:95%"></th>
-            <th><input data-col="size" placeholder="Filter…" style="width:95%"></th>
-            <th></th>
-          </tr>
-        </thead><tbody></tbody></table>
-        <div class="empty" id="empty-barcodes" hidden>No barcodes in the list.
-          Import a country list in Settings → Barcodes.</div>
-      </div>
-      <form id="f-bc-add" class="row" style="flex-wrap:wrap;margin-top:10px" hidden>
-        <input id="bc-code" placeholder="Barcode ID" style="flex:0;min-width:150px"
-               inputmode="numeric" required>
-        <select id="bc-product" required style="flex:2;min-width:180px"></select>
-        <button type="submit" class="ghost">Add mapping</button>
-      </form>
-      <div class="msg" id="msg-barcodes"></div>
+      <div class="msg" id="msg-bclist"></div>
     </div>
   </div>
 
@@ -470,7 +443,6 @@
       <button data-tab="users" id="tab-users">Users</button>
       <button data-tab="households">Households</button>
       <button data-tab="auth" id="tab-auth">Authentication</button>
-      <button data-tab="barcodes" id="tab-bclist" hidden>Barcodes</button>
       <button data-tab="notifications">Notifications</button>
       <button data-tab="apikey">API Key</button>
     </div>
@@ -492,8 +464,6 @@
         <li><b>Types &amp; Categories</b> — browse the product types and
         category options used in the dropdowns — now a tab on the main
         page (global admin only, editing behind an Edit button).</li>
-        <li><b>Barcodes</b> — import a pre-existing list of scanned
-        barcodes, sorted by country of purchase (global admin only).</li>
         <li><b>Authentication</b> — configure OIDC / SSO login (Keycloak,
         Authentik, Authelia…), and enable/disable SSO or password login.
         Global admin only.</li>
@@ -612,21 +582,6 @@
       <div class="msg" id="msg-notif"></div>
     </div>
 
-    <!-- ============ Barcodes tab ============ -->
-    <div class="tabpane" data-pane="barcodes" hidden>
-      <h3 style="margin:0 0 6px">Barcode lists by country</h3>
-      <p class="muted">Use the below dropdown menu to add a pre-existing
-      list of scanned barcodes, sorted by country of purchase. The list is
-      added to your barcode mappings and to the global product list
-      (products that already exist are not duplicated). Each list can be
-      imported once; mappings you delete afterwards stay deleted.</p>
-      <div class="row">
-        <select id="bc-country" style="max-width:260px"></select>
-        <button id="bc-import" class="ghost">Add list</button>
-      </div>
-      <div class="msg" id="msg-bclist"></div>
-    </div>
-
     <!-- ============ API Key tab ============ -->
     <div class="tabpane" data-pane="apikey" hidden>
       <h3 style="margin:0 0 6px">Homepage widget</h3>
@@ -743,6 +698,12 @@
   </div>
 </div>
 
+<!-- in-app alert banner (phone app + notification-permission fallback) -->
+<div id="toast" hidden style="position:fixed;top:14px;left:50%;
+     transform:translateX(-50%);z-index:9999;max-width:92%;
+     padding:12px 18px;border-radius:10px;background:#1f2430;color:#fff;
+     font-size:.9rem;line-height:1.4;box-shadow:0 6px 24px rgba(0,0,0,.35)"></div>
+
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -844,8 +805,9 @@ function showAuth() {
 
 function showApp() {
   $('auth').hidden = true; $('app').hidden = false;
-  $('tab-barcodes').hidden = !isGlobalAdmin();
   $('tab-types-main').hidden = !isGlobalAdmin();
+  $('bc-import-card').hidden = !isGlobalAdmin();
+  if (isGlobalAdmin()) refreshBarcodeCountries();
   $('p-scan').hidden = !IN_APP;
   $('inv-scan-btn').hidden = !IN_APP;
   const vhh = USER.visible_households || USER.households || [];
@@ -935,7 +897,6 @@ function render() {
   renderInventory();
   renderProducts();
   renderTypesPane();
-  loadBarcodes();
 }
 
 // ---------- purchase form (household tab) ----------
@@ -1303,192 +1264,23 @@ $('f-inv-scan').addEventListener('submit', async e => {
   setTimeout(() => { if (!$('inv-scan-modal').hidden) closeInvScan(); }, 1200);
 });
 
-// ---------- barcodes tab (global admin) ----------
-let BARCODES = [];
-let bcEdit = false;
-let bcPending = { del: new Set(), add: new Map(), upd: new Map() };   // buffered until Confirm
-let bcEditRows = new Set();   // rows being edited inline (v2.10)
-let bcDrafts = new Map();     // old code -> draft {barcode, name, manufacturer}
-let bcFilters = { barcode: '', name: '', manufacturer: '', size: '' };
-
-async function loadBarcodes() {
-  if (!isGlobalAdmin()) return;
-  const j = await api('GET', '/api/admin/barcodes');
-  BARCODES = j.barcodes || [];
-  renderBarcodes();
-}
-
-function visibleBarcodes() {
-  return BARCODES.filter(b =>
-    (!bcFilters.barcode || (b.barcode || '').toLowerCase().includes(bcFilters.barcode)) &&
-    (!bcFilters.name || (b.name || '').toLowerCase().includes(bcFilters.name)) &&
-    (!bcFilters.manufacturer ||
-      (b.manufacturer || '').toLowerCase().includes(bcFilters.manufacturer)) &&
-    (!bcFilters.size || (b.size || '').toLowerCase().includes(bcFilters.size)));
-}
-
-function renderBarcodes() {
-  $('bc-edit-btn').hidden = bcEdit;
-  $('bc-edit-actions').hidden = !bcEdit;
-  $('f-bc-add').hidden = !bcEdit;
-  const rows = visibleBarcodes();
-  $('t-barcodes').querySelector('tbody').innerHTML = rows.map(b => {
-    const deleted = bcPending.del.has(b.barcode);
-    const edited = bcPending.upd.has(b.barcode);
-    const rowStyle = deleted ? ' style="opacity:.45;text-decoration:line-through"'
-      : edited ? ' style="opacity:.6;font-style:italic"' : '';
-    if (bcEdit && !deleted && bcEditRows.has(b.barcode)) {
-      const d = bcDrafts.get(b.barcode) ||
-        { barcode: b.barcode, name: b.name, manufacturer: b.manufacturer || '' };
-      const prod = DATA.products.find(p =>
-        p.name === d.name && (p.manufacturer || '') === (d.manufacturer || ''));
-      return `<tr>
-        <td><input value="${esc(d.barcode)}" inputmode="numeric" style="width:120px"
-          oninput="bcField('${esc(b.barcode)}','barcode',this.value)"></td>
-        <td><select style="min-width:180px"
-          onchange="bcField('${esc(b.barcode)}','product',this.value)">
-          ${bcProductOptions(d)}</select></td>
-        <td>${esc(d.manufacturer || '—')}</td>
-        <td>${esc((prod && prod.size) || '—')}</td>
-        <td>
-          <button class="del" title="Save row changes"
-            onclick="bcSaveRow('${esc(b.barcode)}')">✓</button>
-          <button class="del" title="Discard row changes"
-            onclick="bcCancelRow('${esc(b.barcode)}')">✕</button>
-        </td></tr>`;
-    }
-    const delBtn = bcEdit && !deleted
-      ? `<button class="del" title="Remove mapping"
-          onclick="bcDel('${esc(b.barcode)}')">✕</button>` : '';
-    const editBtn = bcEdit && !deleted
-      ? `<button class="del" title="Edit mapping"
-          onclick="bcEditRow('${esc(b.barcode)}')">✎</button>` : '';
-    return `<tr${rowStyle}><td><code>${esc(b.barcode)}</code></td>
-      <td>${esc(b.name)}</td>
-      <td>${esc(b.manufacturer || '—')}</td>
-      <td>${esc(b.size || '—')}</td>
-      <td>${delBtn}${editBtn}</td></tr>`;
-  }).join('') || '<tr><td colspan="5" class="muted">No barcodes match — ' +
-    'import a country list in Settings → Barcodes, or add mappings in edit mode.</td></tr>';
-  $('empty-barcodes').hidden = rows.length > 0;
-  const n = bcPending.del.size + bcPending.add.size + bcPending.upd.size;
-  $('bc-pending').textContent = bcEdit && n ? `(${n} pending change${n > 1 ? 's' : ''})` : '';
-  $('bc-count').textContent = rows.length === BARCODES.length
-    ? rows.length + ' barcode(s)' : rows.length + ' of ' + BARCODES.length + ' barcode(s)';
-  renderBarcodeProductOptions();
-}
-
-function renderBarcodeProductOptions() {
-  $('bc-product').innerHTML = DATA.products.map(p =>
-    `<option value="${esc(p.name)}\u0001${esc(p.manufacturer || '')}">` +
-    esc(p.name + (p.manufacturer ? ' — ' + p.manufacturer : '') +
-      (p.size ? ' (' + p.size + ')' : '')) + '</option>').join('');
-}
-
-function bcProductOptions(sel) {
-  return DATA.products.map(p => {
-    const v = p.name + '\u0001' + (p.manufacturer || '');
-    const isSel = p.name === sel.name &&
-      (p.manufacturer || '') === (sel.manufacturer || '');
-    const label = p.name + (p.manufacturer ? ' — ' + p.manufacturer : '') +
-      (p.size ? ' (' + p.size + ')' : '');
-    return `<option value="${esc(v)}"${isSel ? ' selected' : ''}>${esc(label)}</option>`;
-  }).join('');
-}
-window.bcEditRow = code => { bcEditRows.add(code); renderBarcodes(); };
-window.bcCancelRow = code => {
-  bcEditRows.delete(code); bcDrafts.delete(code); renderBarcodes();
+// ---------- product barcodes (merged from the old Barcodes tab) ----------
+// Global admin, inside the Products tab's edit mode: add / remove a
+// product's barcode mappings directly in the product list.
+window.pBcAdd = async (name, manufacturer) => {
+  const code = prompt(`Barcode to map to "${name}":`);
+  if (!code) return;
+  const j = await api('POST', '/api/admin/barcodes', {
+    barcode: code.trim(), name, manufacturer });
+  if (j.error) return alert(j.error);
+  load();
 };
-window.bcSaveRow = code => {
-  const d = bcDrafts.get(code);
-  bcEditRows.delete(code);
-  if (d && d.barcode.trim() && d.name) {
-    d.barcode = d.barcode.trim();
-    bcPending.upd.set(code, d);
-    bcPending.del.delete(code);
-  } else {
-    bcDrafts.delete(code);
-  }
-  renderBarcodes();
+window.pBcDel = async (name, manufacturer, code) => {
+  if (!confirm(`Remove barcode ${code} from "${name}"?`)) return;
+  const j = await api('DELETE', '/api/admin/barcodes/' + encodeURIComponent(code));
+  if (j.error) return alert(j.error);
+  load();
 };
-window.bcField = (old, field, value) => {
-  if (!bcDrafts.has(old)) {
-    const b = BARCODES.find(x => x.barcode === old);
-    if (!b) return;
-    bcDrafts.set(old, { barcode: b.barcode, name: b.name,
-      manufacturer: b.manufacturer || '' });
-  }
-  const d = bcDrafts.get(old);
-  if (field === 'barcode') d.barcode = value;
-  else {
-    const [name, manufacturer] = value.split('\u0001');
-    d.name = name; d.manufacturer = manufacturer || '';
-  }
-};
-
-window.bcDel = code => {
-  bcPending.del.add(code);
-  bcPending.add.delete(code);
-  bcPending.upd.delete(code);
-  bcEditRows.delete(code);
-  bcDrafts.delete(code);
-  renderBarcodes();
-};
-
-$('bc-edit-btn').addEventListener('click', () => {
-  bcEdit = true; renderBarcodes();
-});
-$('bc-cancel-btn').addEventListener('click', () => {
-  bcEdit = false;
-  bcPending = { del: new Set(), add: new Map(), upd: new Map() };
-  bcEditRows.clear(); bcDrafts.clear();
-  renderBarcodes();
-});
-$('bc-confirm-btn').addEventListener('click', async () => {
-  const btn = $('bc-confirm-btn');
-  btn.disabled = true;
-  for (const [code, p] of bcPending.add) {
-    const j = await api('POST', '/api/admin/barcodes', {
-      barcode: code, name: p.name, manufacturer: p.manufacturer });
-    if (j.error) { msg('msg-barcodes', j.error, false); btn.disabled = false; return; }
-  }
-  for (const code of bcPending.del) {
-    const j = await api('DELETE', '/api/admin/barcodes/' + encodeURIComponent(code));
-    if (j.error) { msg('msg-barcodes', j.error, false); btn.disabled = false; return; }
-  }
-  for (const [old, d] of bcPending.upd) {
-    if (old !== d.barcode) {
-      const jd = await api('DELETE', '/api/admin/barcodes/' + encodeURIComponent(old));
-      if (jd.error && jd.error.indexOf('not found') === -1) {
-        msg('msg-barcodes', jd.error, false); btn.disabled = false; return;
-      }
-    }
-    const j = await api('POST', '/api/admin/barcodes', {
-      barcode: d.barcode, name: d.name, manufacturer: d.manufacturer });
-    if (j.error) { msg('msg-barcodes', j.error, false); btn.disabled = false; return; }
-  }
-  bcEdit = false;
-  bcPending = { del: new Set(), add: new Map(), upd: new Map() };
-  bcEditRows.clear(); bcDrafts.clear();
-  btn.disabled = false;
-  msg('msg-barcodes', 'Changes confirmed ✓', true);
-  loadBarcodes();
-});
-$('f-bc-add').addEventListener('submit', e => {
-  e.preventDefault();
-  const code = $('bc-code').value.trim();
-  const [name, manufacturer] = ($('bc-product').value || '').split('\u0001');
-  if (!code || !name) return;
-  bcPending.del.delete(code);
-  bcPending.add.set(code, { name, manufacturer: manufacturer || '' });
-  $('bc-code').value = '';
-  renderBarcodes();
-});
-document.querySelectorAll('#t-barcodes thead input[data-col]').forEach(inp =>
-  inp.addEventListener('input', e => {
-    bcFilters[e.target.dataset.col] = e.target.value.toLowerCase();
-    renderBarcodes();
-  }));
 
 // ---------- products tab ----------
 function visibleProducts() {
@@ -1496,7 +1288,9 @@ function visibleProducts() {
   for (const [k, q] of Object.entries(prodColFilter)) {
     if (!q) continue;
     rows = rows.filter(p => {
-      const v = k === 'type' ? typeLabel(p.type) : (p[k] || '');
+      const v = k === 'type' ? typeLabel(p.type)
+        : k === 'barcodes' ? (p.barcodes || []).join(' ')
+        : (p[k] || '');
       return String(v).toLowerCase().includes(q);
     });
   }
@@ -1519,16 +1313,26 @@ function renderProducts() {
   renderProdControls();
   const rows = visibleProducts();
   const tb = $('t-products').querySelector('tbody');
-  tb.innerHTML = rows.map(p =>
-    `<tr><td>${esc(p.name)}</td><td>${esc(p.manufacturer || '—')}</td>
+  tb.innerHTML = rows.map(p => {
+    const bcAdmin = isGlobalAdmin() && prodEdit;
+    const bcCell = ((p.barcodes || []).length
+      ? (p.barcodes || []).map(code => `<code>${esc(code)}</code>` +
+          (bcAdmin ? ` <button class="del" title="Remove barcode"
+            onclick="pBcDel('${esc(p.name)}','${esc(p.manufacturer || '')}','${esc(code)}')">✕</button>`
+            : '')).join('<br>')
+      : '<span class="muted">—</span>') +
+      (bcAdmin ? ` <button class="del" title="Add barcode"
+        onclick="pBcAdd('${esc(p.name)}','${esc(p.manufacturer || '')}')">＋</button>` : '');
+    return `<tr><td>${esc(p.name)}</td><td>${esc(p.manufacturer || '—')}</td>
      <td>${esc(typeLabel(p.type) || '—')}</td>
      <td>${esc(p.category || '—')}</td><td>${esc(p.size || '—')}</td>
+     <td>${bcCell}</td>
      <td>
        ${canEditProducts() ? `<button class="del" title="Edit product"
          onclick="editProduct('${esc(p.name)}','${esc(p.manufacturer || '')}')">✎</button>` : ''}
        ${canEditProducts() && prodEdit ? `<button class="del" title="Remove product"
          onclick="delProduct('${esc(p.name)}','${esc(p.manufacturer || '')}')">✕</button>` : ''}
-     </td></tr>`).join('');
+     </td></tr>`; }).join('');
   $('empty-products').hidden = rows.length > 0;
   $('prod-count').textContent = rows.length === DATA.products.length
     ? rows.length + ' product(s)' : rows.length + ' of ' + DATA.products.length + ' product(s)';
@@ -1645,7 +1449,6 @@ async function openSettings(keepTab) {
   // tab visibility
   $('tab-users').hidden = !canEditProducts();
   $('tab-auth').hidden = !isGlobalAdmin();
-  $('tab-bclist').hidden = !isGlobalAdmin();
   // households list (own households for users, all for global admin)
   const h = await api('GET', '/api/admin/households');
   ADMIN.households = h.households || [];
@@ -1662,14 +1465,14 @@ async function openSettings(keepTab) {
   if (isGlobalAdmin()) {
     const c = await api('GET', '/api/admin/config');
     if (!c.error) { ADMIN.config = c; renderAuth(c); }
-    const cl = await api('GET', '/api/admin/barcode-countries');
-    renderBarcodeCountries(cl.countries || []);
   }
   syncNotifToggle();
   showTab(keepTab || 'general');
 }
 
-function renderBarcodeCountries(countries) {
+async function refreshBarcodeCountries() {
+  const cl = await api('GET', '/api/admin/barcode-countries');
+  const countries = cl.countries || [];
   $('bc-country').innerHTML = countries.map(c =>
     `<option value="${esc(c.country)}">${esc(c.label)} — ${c.count} barcodes` +
     (c.imported ? ' (already imported)' : '') + `</option>`).join('') ||
@@ -1688,8 +1491,8 @@ $('bc-import').addEventListener('click', async () => {
     ? `The ${j.country} list was already imported — nothing added.`
     : `Added ${j.added} product(s) and mapped ${j.mapped} barcode(s) from ` +
       `the ${j.country} list ✓`, true);
-  await openSettings('barcodes');
-  loadBarcodes();
+  refreshBarcodeCountries();
+  load();
 });
 
 function roleLabel(u) {
@@ -1974,45 +1777,58 @@ $('apikey-regen').addEventListener('click', async () => {
 // ---- notifications (Settings tab + level-change alerts) ----
 let NOTIF_ON = localStorage.getItem('notifications') === '1';
 let lastLevels = null, lastLevelsHH = '';
+let toastTimer = null;
+
+function toastMsg(text) {
+  const t = $('toast');
+  t.textContent = text;
+  t.hidden = false;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 6000);
+}
 
 function syncNotifToggle() {
   const t = $('notif-toggle');
   t.checked = NOTIF_ON;
-  t.disabled = !('Notification' in window);
+  t.disabled = false;
 }
 
 function showNotif(title, body) {
-  if (!('Notification' in window) || Notification.permission !== 'granted') return false;
-  try { new Notification(title, { body }); return true; }
-  catch (e) { return false; }
+  // v2.10.1 phone-app fix: the Android WebView never grants the
+  // Notification permission, so in the app (and anywhere permission is
+  // missing) alerts fall back to the in-app banner + vibration.
+  if (!IN_APP && 'Notification' in window && Notification.permission === 'granted') {
+    try { new Notification(title, { body }); return true; } catch (e) { /* fall back */ }
+  }
+  toastMsg(title + ' — ' + body);
+  if (navigator.vibrate) { try { navigator.vibrate([120, 60, 120]); } catch (e) {} }
+  return true;
 }
 
 $('notif-toggle').addEventListener('change', async e => {
   if (e.target.checked) {
-    if (!('Notification' in window))
-      return msg('msg-notif', 'This browser does not support notifications.', false);
-    let p = Notification.permission;
-    if (p === 'default') p = await Notification.requestPermission();
-    if (p !== 'granted') {
-      NOTIF_ON = false; localStorage.setItem('notifications', '0');
-      syncNotifToggle();
-      return msg('msg-notif',
-        'Permission denied — allow notifications for this site in your browser settings.', false);
+    // Browsers ask for permission; the phone app (WebView) can't grant
+    // it, so there we skip the prompt and use the in-app banner.
+    if (!IN_APP && 'Notification' in window) {
+      let p = Notification.permission;
+      if (p === 'default') p = await Notification.requestPermission();
     }
     NOTIF_ON = true; localStorage.setItem('notifications', '1');
-    msg('msg-notif', 'Notifications enabled on this device ✓', true);
+    msg('msg-notif', IN_APP
+      ? 'Notifications enabled on this device ✓ (alerts appear as in-app banners)'
+      : 'Notifications enabled on this device ✓', true);
   } else {
     NOTIF_ON = false; localStorage.setItem('notifications', '0');
     msg('msg-notif', 'Notifications turned off.', true);
   }
+  syncNotifToggle();
 });
 
 $('notif-test').addEventListener('click', () => {
   if (!NOTIF_ON) return msg('msg-notif', 'Turn notifications on first.', false);
   const ok = showNotif('Food storage tracker',
     'Test notification — this is what alerts look like.');
-  msg('msg-notif', ok ? 'Test notification sent ✓' :
-    'The notification could not be shown (check browser permission).', ok);
+  msg('msg-notif', ok ? 'Alert shown ✓' : 'The alert could not be shown.', ok);
 });
 
 const LEVEL_RANK = { ok: 0, '6months': 1, '3months': 2, '1month': 3, expired: 4 };
