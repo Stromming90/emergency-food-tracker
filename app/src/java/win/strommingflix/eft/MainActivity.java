@@ -27,14 +27,14 @@ import android.widget.Toast;
  * Emergency Food Storage Tracker — Android app.
  * A WebView wrapper around the self-hosted web UI, with camera access so the
  * site's barcode scanning (BarcodeDetector) works. The web app detects the
- * "EFT-Android" user-agent token to show the scan button.
+ * "EFT-Android" user-agent token to show the scan buttons.
  */
 public class MainActivity extends Activity {
 
     private static final int REQ_CAMERA = 100;
     private static final String PREFS = "eft";
     private static final String KEY_URL = "server_url";
-    private static final String APP_VERSION = "2.7.3";
+    private static final String APP_VERSION = "2.8.0";
     // Custom deep-link scheme: an OIDC flow that somehow ends up in the
     // browser redirects back into the app via win.strommingflix.eft://…
     private static final String DL_SCHEME = "win.strommingflix.eft";
@@ -162,8 +162,8 @@ public class MainActivity extends Activity {
         s.setDomStorageEnabled(true);
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        // Token used by the web app to enable the scan button.
-        s.setUserAgentString(s.getUserAgentString() + " EFT-Android/2.7.3");
+        // Token used by the web app to enable the scan buttons.
+        s.setUserAgentString(s.getUserAgentString() + " EFT-Android/2.8.0");
 
         web.setWebViewClient(new WebViewClient() {
             @Override
