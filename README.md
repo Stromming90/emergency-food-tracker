@@ -14,6 +14,16 @@ including TrueNAS.
 
 - 📋 **Global product list** — the list is shared by all households. Each
   product has a type, a category, a manufacturer and a size (g/ml).
+- 🏷 **Barcode reference list with 1 747 Swedish defaults** (v2.8) — the
+  tracker ships with a bundled list of Swedish emergency-food products
+  (pasta, rice, canned fish, oils, honey, crispbread, coffee …) seeded on
+  first start. Scan a product and it resolves instantly; global admins
+  can map more barcodes in the Barcodes tab.
+- 📷 **Two scan workflows (Android app)** — the top-bar scan pre-fills the
+  *Record a purchase* form (and maps unknown barcodes for admins), while
+  the Inventory section's own **Scan** button (v2.8) adds scanned items
+  **straight into the inventory** with an arbitrary quantity — no need to
+  scan every single item.
 - 🗂️ **Curated emergency-food categories** — the Products tab is built
   around nine types (dry staples & carbohydrates, canned & jarred ready
   foods, protein, fats & cooking, extras & sweeteners, beverages, instant
@@ -40,7 +50,7 @@ including TrueNAS.
 The project publishes a prebuilt image to GitHub Container Registry —
 every push to `main` triggers a GitHub Actions build automatically
 (see `.github/workflows/docker-publish.yml`). The image is tagged `latest`
-and with the current release version (e.g. `v2.4`).
+and with the current release version (e.g. `v2.8.0`).
 
 ```yaml
 services:
@@ -84,7 +94,8 @@ If you prefer building from source instead of the registry image, replace
 **First visit:** you're asked to create the **global admin account** and
 your **first household** — name it something like "home". After that, the
 login screen has a username/password form (and an SSO button once OIDC is
-configured).
+configured). The bundled Swedish barcode defaults are seeded on first
+start; they appear in the Products tab and the Barcodes tab (global admin).
 
 Other users are created in Settings → Users (by a global admin, or by a
 household admin for their own households). Any user can create additional
@@ -96,15 +107,17 @@ the household admin of the new household.
 | Mount | Contents |
 |---|---|
 | `/data` | `products.csv` (global product list), `households/<name>/inventory.csv` |
-| `/config` | `users.json` (accounts, roles, API keys), `config.json` (OIDC settings) |
+| `/config` | `users.json` (accounts, roles, API keys), `config.json` (OIDC settings, barcode mappings) |
 
-Your data lives in plain CSV files — a backup is just a copy of the folder.
-TrueNAS snapshot tasks on the data dataset work great.
+Your data lives in plain CSV/JSON files — a backup is just a copy of the
+folder. TrueNAS snapshot tasks on the data dataset work great.
 
 > **Migration:** upgrading from an older version is automatic on first
 > start — the flat pre-household layout moves into `households/default/`,
 > v2.0 per-household product lists are merged into the global
-> `products.csv`, and old user flags are converted to the new roles.
+> `products.csv`, old user flags are converted to the new roles, and (v2.8)
+> the bundled Swedish barcode defaults are merged in without touching your
+> existing products or mappings.
 
 ### Environment variables
 
@@ -138,8 +151,10 @@ The app is organised into two main tabs:
   **Inventory** is below: filter by text, click a coloured status badge
   (Fine · Less than 6 months · Less than 3 months · Less than 1 month ·
   Expired, or All) to filter by state, and click any column header to
-  sort. Quantities are changed deliberately via a ✎ button — no
-  accidental edits. To remove an item, use its ✕ button.
+  sort. In the Android app there's also a **📷 Scan** button (v2.8):
+  scan an item, set the quantity you're adding and confirm — it lands in
+  the inventory directly. Quantities are changed deliberately via a ✎
+  button — no accidental edits. To remove an item, use its ✕ button.
 - **📋 Products** — add products with type, category, product name,
   manufacturer and size (g/ml); category suggestions come from the chosen
   type. The product table (filter, sort, edit/remove for admins) shows
@@ -169,6 +184,26 @@ categories:
 The type's shelf-life range is used to suggest a best-before date when
 recording a purchase.
 
+### Barcodes (Android app)
+
+Scanning is available in the Android app (the web app detects the
+`EFT-Android` user-agent token of the WebView wrapper and shows the scan
+buttons):
+
+- **Top-bar 📷 scan** — looks the barcode up in the mapping table: a known
+  barcode pre-fills the *Record a purchase* form; an unknown one opens
+  the Barcodes tab for a global admin to map it to a product.
+- **Inventory 📷 scan** (v2.8) — a separate scanner in the Household →
+  Inventory section: scan an item, enter how many you're adding and the
+  best-before date, and it's added to the inventory directly. "Scan
+  another" lets you stock-take rapidly. This workflow never jumps to the
+  Barcodes tab or the purchase form.
+
+The tracker ships with **1 747 default barcode mappings** for Swedish
+emergency-food products (`data/barcode-defaults.json`), seeded on first
+start. Global admins manage mappings in the **🏷 Barcodes** tab; deletions
+stick (the seeding runs once per version).
+
 ## Roles
 
 - **Global admin** — the general admin role for the application with
@@ -180,8 +215,8 @@ recording a purchase.
   revoke household-admin rights. Household admins can make other users
   household admins of their households.
 - **User** — records purchases and manages the inventory of their own
-  households; can create new households (becoming that household's admin)
-  and has a personal API key.
+  households; can create new households (becoming that household's
+  admin) and has a personal API key.
 
 ## gethomepage widget
 
@@ -290,12 +325,13 @@ global admin role.
 
 ```
 data/
+  barcode-defaults.json        # bundled Swedish barcode defaults (v2.8, read-only)
   products.csv                  # GLOBAL product list (name, manufacturer, type, category, size)
   households/
     <household>/inventory.csv   # id, product, manufacturer, best_before, quantity, added_date
 config/
   users.json                    # user accounts (roles, household admin rights, personal API keys)
-  config.json                   # OIDC settings
+  config.json                   # OIDC settings + barcode -> product mappings
 ```
 
 ## Security notes
