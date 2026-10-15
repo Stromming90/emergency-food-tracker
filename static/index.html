@@ -174,9 +174,6 @@
     <span class="spacer"></span>
     <label class="hh-label" for="household">Household:</label>
     <select id="household" title="Household"></select>
-    <a class="iconbtn" id="b-android" href="/app.apk" title="Download the Android app"
-       style="text-decoration:none;white-space:nowrap">📱 <span class="android-label">Get for Android</span></a>
-    <button class="iconbtn" id="b-scan" hidden title="Scan a barcode">📷</button>
     <button class="iconbtn" id="b-settings" title="Settings">⚙️</button>
     <button class="iconbtn" id="b-theme" title="Theme: light / dark / auto">🌙</button>
     <button class="iconbtn" id="b-logout" title="Log out">⏻</button>
@@ -197,10 +194,14 @@
       <form id="f-buy">
         <select id="b-type" style="flex:1;min-width:180px"
                 title="Filter products by type"></select>
+        <select id="b-cat" style="flex:1;min-width:160px"
+                title="Filter products by category"></select>
         <select id="b-product" required style="flex:2;min-width:180px"></select>
         <input id="b-date" type="date" required title="Best before date">
         <input id="b-qty" type="number" min="1" value="1" style="flex:0;width:70px" title="Quantity">
         <button type="submit">Buy</button>
+        <button type="button" id="inv-scan-btn" class="ghost" style="flex:0" hidden
+                title="Scan items into the inventory">📷 Scan</button>
       </form>
       <div class="msg" id="msg-buy"></div>
     </div>
@@ -210,7 +211,6 @@
       <div class="toolbar">
         <input type="text" id="inv-filter" placeholder="Filter by product / manufacturer…">
         <span class="count" id="inv-count"></span>
-        <button id="inv-scan-btn" class="ghost" style="flex:0" hidden title="Scan items into the inventory">📷 Scan</button>
         <button id="inv-edit-btn" class="ghost" style="flex:0" hidden>✏️ Edit inventory</button>
         <span id="inv-edit-actions" hidden>
           <button id="inv-save-btn" class="ghost" style="flex:0">Save</button>
@@ -232,6 +232,17 @@
             <th class="sortable" data-key="level">Status<span class="arrow"></span></th>
             <th></th>
           </tr>
+          <tr class="filterrow">
+            <th><input data-col="product" placeholder="Filter…" style="width:95%"></th>
+            <th><input data-col="type" placeholder="Filter…" style="width:95%"></th>
+            <th><input data-col="category" placeholder="Filter…" style="width:95%"></th>
+            <th><input data-col="size" placeholder="Filter…" style="width:95%"></th>
+            <th><input data-col="quantity" placeholder="Filter…" style="width:95%"></th>
+            <th><input data-col="best_before" placeholder="Filter…" style="width:95%"></th>
+            <th><input data-col="days_left" placeholder="Filter…" style="width:95%"></th>
+            <th><input data-col="level" placeholder="Filter…" style="width:95%"></th>
+            <th></th>
+          </tr>
         </thead><tbody></tbody></table>
         <div class="empty" id="empty-inventory" hidden>Inventory is empty.</div>
       </div>
@@ -243,6 +254,8 @@
     <div class="card">
       <h2>Add a product</h2>
       <div class="form-col" style="max-width:560px">
+        <label for="p-barcode">Barcode (optional)</label>
+        <input id="p-barcode" inputmode="numeric" placeholder="e.g. 7310356206117">
         <label for="p-type">Type</label>
         <select id="p-type"></select>
         <label for="p-cat">Category</label>
@@ -252,17 +265,12 @@
         <label for="p-man">Manufacturer</label>
         <input id="p-man" placeholder="e.g. Barilla">
         <label for="p-size">Size</label>
-        <div class="row" style="margin:0">
-          <input id="p-size" type="number" min="0" step="any" placeholder="Amount"
-                 style="max-width:140px">
-          <select id="p-size-unit" style="flex:0;max-width:90px">
-            <option value="g">g</option>
-            <option value="ml">ml</option>
-          </select>
-        </div>
+        <input id="p-size" placeholder="e.g. 500 g, 1 kg, 500/350 g">
       </div>
       <div class="row" style="margin-top:12px">
         <button id="p-add">Add product</button>
+        <button type="button" id="p-scan" class="ghost" style="flex:0" hidden
+                title="Scan a barcode to find — or start adding — a product">📷 Scan</button>
       </div>
       <div class="msg" id="msg-product"></div>
     </div>
@@ -282,6 +290,14 @@
             <th class="sortable" data-key="category">Category<span class="arrow"></span></th>
             <th class="sortable" data-key="size">Size<span class="arrow"></span></th>
             <th></th>
+          </tr>
+          <tr class="filterrow">
+            <th><input data-col="name" placeholder="Filter…" style="width:95%"></th>
+            <th><input data-col="manufacturer" placeholder="Filter…" style="width:95%"></th>
+            <th><input data-col="type" placeholder="Filter…" style="width:95%"></th>
+            <th><input data-col="category" placeholder="Filter…" style="width:95%"></th>
+            <th><input data-col="size" placeholder="Filter…" style="width:95%"></th>
+            <th></th>
           </tr></thead>
         <tbody></tbody></table>
         <div class="empty" id="empty-products" hidden>No products yet.</div>
@@ -291,19 +307,42 @@
 
   <!-- ============ Information tab ============ -->
   <div data-pane="barcodes" hidden>
-    <div class="card" style="max-width:760px">
+    <div class="card" style="max-width:960px">
       <h2>Barcodes</h2>
-      <p class="muted">Tie scanned barcode IDs to products in the global product
-      list. Scanning a mapped barcode in the Android app instantly selects the
-      product in the purchase form.</p>
-      <table id="t-barcodes"><thead>
-        <tr><th>Barcode</th><th>Product</th><th></th></tr></thead><tbody></tbody></table>
-      <h3>Map a barcode</h3>
-      <form id="f-barcode" class="row" style="flex-wrap:wrap">
+      <p class="muted">Barcode → product reference list. Scanning a mapped
+      barcode in the app resolves the product instantly. Import a
+      pre-scanned country list in <b>Settings → Barcodes</b>, or manage
+      individual mappings in edit mode (global admin).</p>
+      <div class="toolbar">
+        <span class="count" id="bc-count"></span>
+        <button id="bc-edit-btn" class="ghost" style="flex:0" hidden>✏️ Edit</button>
+        <span id="bc-edit-actions" hidden>
+          <button id="bc-confirm-btn" class="ghost" style="flex:0">Confirm changes</button>
+          <button id="bc-cancel-btn" class="ghost" style="flex:0">Cancel</button>
+        </span>
+        <span class="count" id="bc-pending"></span>
+      </div>
+      <div class="scroll">
+        <table id="t-barcodes"><thead>
+          <tr>
+            <th>Barcode</th><th>Product</th><th>Brand</th><th>Size</th><th></th>
+          </tr>
+          <tr class="filterrow">
+            <th><input data-col="barcode" placeholder="Filter…" style="width:95%"></th>
+            <th><input data-col="name" placeholder="Filter…" style="width:95%"></th>
+            <th><input data-col="manufacturer" placeholder="Filter…" style="width:95%"></th>
+            <th><input data-col="size" placeholder="Filter…" style="width:95%"></th>
+            <th></th>
+          </tr>
+        </thead><tbody></tbody></table>
+        <div class="empty" id="empty-barcodes" hidden>No barcodes in the list.
+          Import a country list in Settings → Barcodes.</div>
+      </div>
+      <form id="f-bc-add" class="row" style="flex-wrap:wrap;margin-top:10px" hidden>
         <input id="bc-code" placeholder="Barcode ID" style="flex:0;min-width:150px"
                inputmode="numeric" required>
         <select id="bc-product" required style="flex:2;min-width:180px"></select>
-        <button type="submit">Map</button>
+        <button type="submit" class="ghost">Add mapping</button>
       </form>
       <div class="msg" id="msg-barcodes"></div>
     </div>
@@ -332,6 +371,49 @@
       <p class="muted" style="margin:4px 0">Buy a little extra of what you
       normally eat, rotate it in daily life, check dates every six months, and
       adapt for children, special diets, and pets.</p>
+      <h3 style="margin:16px 0 4px">Storage &amp; shelf life by food type</h3>
+      <p class="muted" style="margin:4px 0">Typical shelf life at room
+      temperature in <b>months</b>, for unopened store-bought items stored
+      cool, dark and dry. "Best before" is a quality statement, not a safety
+      limit: many dry and canned foods stay good long beyond it — check
+      look, smell and taste before use.</p>
+      <div class="scroll">
+        <table id="t-storage"><thead>
+          <tr><th>Food</th><th>Shelf life (months)</th><th>Storage tips</th>
+            <th>Beyond "best before"</th></tr>
+        </thead><tbody>
+        <tr><td>White rice</td><td>60</td><td>Cool, dry, airtight</td><td>Keeps for many years — often decades — beyond the date</td></tr>
+        <tr><td>Brown rice</td><td>18</td><td>Cool, dry, airtight</td><td>The germ oil turns rancid — respect the date</td></tr>
+        <tr><td>Dry pasta</td><td>36</td><td>Cool, dry, airtight</td><td>Stays good long beyond the date</td></tr>
+        <tr><td>Oats / rolled oats</td><td>24</td><td>Airtight, dry</td><td>Usually fine well beyond the date</td></tr>
+        <tr><td>Wheat flour (white)</td><td>24</td><td>Airtight, dry</td><td>Fine long beyond the date</td></tr>
+        <tr><td>Wholemeal / rye flour</td><td>9</td><td>Airtight, cool</td><td>The oils go rancid faster</td></tr>
+        <tr><td>Couscous / bulgur</td><td>24</td><td>Airtight, dry</td><td>Keeps well beyond the date</td></tr>
+        <tr><td>Dry lentils, beans &amp; peas</td><td>60</td><td>Airtight, dry</td><td>Edible for years; older ones need longer cooking</td></tr>
+        <tr><td>Canned beans &amp; chickpeas</td><td>48</td><td>Pantry, avoid rust &amp; dents</td><td>Often fine far beyond the date if the can is intact</td></tr>
+        <tr><td>Canned tomatoes &amp; vegetables</td><td>36</td><td>Pantry, avoid rust &amp; dents</td><td>Usually good well beyond the date</td></tr>
+        <tr><td>Canned fruit</td><td>36</td><td>Pantry, avoid rust &amp; dents</td><td>Usually good well beyond the date</td></tr>
+        <tr><td>Canned tuna &amp; mackerel</td><td>48</td><td>Pantry, avoid rust &amp; dents</td><td>Edible long beyond the date if the can is intact</td></tr>
+        <tr><td>Canned meat stews</td><td>36</td><td>Pantry, avoid rust &amp; dents</td><td>Check the can, not the date</td></tr>
+        <tr><td>UHT milk</td><td>9</td><td>Pantry until opened, then fridge</td><td>Unopened cartons often keep months beyond the date</td></tr>
+        <tr><td>UHT plant drinks (oat, soy)</td><td>9</td><td>Pantry until opened, then fridge</td><td>Often fine beyond the date if sealed</td></tr>
+        <tr><td>Hard cheese (vacuum-packed)</td><td>6</td><td>Fridge; freeze in portions</td><td>Mould-free hard cheese usually keeps well beyond the date</td></tr>
+        <tr><td>Butter / ghee</td><td>6 / 18</td><td>Fridge; ghee in the pantry</td><td>Ghee keeps far beyond the date</td></tr>
+        <tr><td>Cooking oil</td><td>18</td><td>Dark, cool, tightly closed</td><td>Smell test: rancid oil should be discarded</td></tr>
+        <tr><td>Olive oil</td><td>24</td><td>Dark, cool</td><td>Often good beyond the date if it smells fresh</td></tr>
+        <tr><td>Honey</td><td>60</td><td>Airtight; may crystallise harmlessly</td><td>Practically indefinite — crystallising is natural</td></tr>
+        <tr><td>Sugar &amp; salt</td><td>60</td><td>Airtight, dry</td><td>Indefinite — they never spoil if kept dry</td></tr>
+        <tr><td>Jam &amp; marmalade (unopened)</td><td>24</td><td>Pantry</td><td>Usually fine beyond the date; check for mould once open</td></tr>
+        <tr><td>Peanut butter</td><td>18</td><td>Pantry; fridge after opening</td><td>Often good well beyond the date</td></tr>
+        <tr><td>Nuts &amp; seeds (unopened)</td><td>12</td><td>Cool, dark; fridge or freezer extends</td><td>Turn rancid — taste before use</td></tr>
+        <tr><td>Dried fruit</td><td>18</td><td>Airtight, dark</td><td>Usually fine beyond the date</td></tr>
+        <tr><td>Crispbread</td><td>12</td><td>Airtight, dry</td><td>Stays crisp long beyond the date if kept dry</td></tr>
+        <tr><td>Coffee (vacuum-packed)</td><td>24</td><td>Airtight, cool, dark</td><td>Flavour fades, but it stays safe far beyond the date</td></tr>
+        <tr><td>Tea (bags / loose)</td><td>36</td><td>Airtight, dry</td><td>Loses aroma, not safety</td></tr>
+        <tr><td>Chocolate</td><td>18</td><td>15–18 °C, dry</td><td>Fat bloom is harmless; usually fine beyond the date</td></tr>
+        <tr><td>Bouillon cubes &amp; stock powder</td><td>24</td><td>Airtight, dry</td><td>Keeps well beyond the date if dry</td></tr>
+        </tbody></table>
+      </div>
       <h3 style="margin:16px 0 4px">Sources for further reading</h3>
       <ul style="line-height:1.8">
         <li><a href="https://www.livsmedelsverket.se/beredskap/hemberedskap-privatperson/matforrad/" target="_blank" rel="noopener">Livsmedelsverket (Sweden) – Matförråd vid kris</a></li>
@@ -359,6 +441,7 @@
       <button data-tab="households">Households</button>
       <button data-tab="auth" id="tab-auth">Authentication</button>
       <button data-tab="types" id="tab-types" hidden>Types</button>
+      <button data-tab="barcodes" id="tab-bclist" hidden>Barcodes</button>
       <button data-tab="apikey">API Key</button>
     </div>
 
@@ -378,6 +461,8 @@
         (global admin only).</li>
         <li><b>Types</b> — edit the product types and category options shown
         in the dropdowns (global admin only).</li>
+        <li><b>Barcodes</b> — import a pre-existing list of scanned
+        barcodes, sorted by country of purchase (global admin only).</li>
         <li><b>Authentication</b> — configure OIDC / SSO login (Keycloak,
         Authentik, Authelia…), and enable/disable SSO or password login.
         Global admin only.</li>
@@ -492,6 +577,21 @@
       <div class="msg" id="msg-types"></div>
     </div>
 
+    <!-- ============ Barcodes tab ============ -->
+    <div class="tabpane" data-pane="barcodes" hidden>
+      <h3 style="margin:0 0 6px">Barcode lists by country</h3>
+      <p class="muted">Use the below dropdown menu to add a pre-existing
+      list of scanned barcodes, sorted by country of purchase. The list is
+      added to your barcode mappings and to the global product list
+      (products that already exist are not duplicated). Each list can be
+      imported once; mappings you delete afterwards stay deleted.</p>
+      <div class="row">
+        <select id="bc-country" style="max-width:260px"></select>
+        <button id="bc-import" class="ghost">Add list</button>
+      </div>
+      <div class="msg" id="msg-bclist"></div>
+    </div>
+
     <!-- ============ API Key tab ============ -->
     <div class="tabpane" data-pane="apikey" hidden>
       <h3 style="margin:0 0 6px">Homepage widget</h3>
@@ -574,13 +674,7 @@
       <label for="pe-man">Manufacturer</label>
       <input id="pe-man">
       <label for="pe-size">Size</label>
-      <div class="row" style="margin:0">
-        <input id="pe-size" type="number" min="0" step="any" style="max-width:140px">
-        <select id="pe-size-unit" style="flex:0;max-width:90px">
-          <option value="g">g</option>
-          <option value="ml">ml</option>
-        </select>
-      </div>
+      <input id="pe-size" placeholder="e.g. 500 g, 1 kg, 500/350 g">
     </div>
     <div class="row" style="margin-top:12px">
       <button id="pe-save">Save changes</button>
@@ -643,9 +737,12 @@ let ADMIN = { users: [], households: [], viewer: {} };
 
 // inventory view state
 let invFilter = '', invLevel = '';
+let invColFilter = {};
 let invSort = { key: 'days_left', dir: 1 };
-let prodFilter = '', prodSort = { key: 'name', dir: 1 };
-let buyType = '';
+let prodFilter = '';
+let prodColFilter = {};
+let prodSort = { key: 'name', dir: 1 };
+let buyType = '', buyCat = '';
 
 async function api(method, url, body) {
   const r = await fetch(url, { method,
@@ -713,12 +810,8 @@ function showAuth() {
 function showApp() {
   $('auth').hidden = true; $('app').hidden = false;
   $('tab-barcodes').hidden = !isGlobalAdmin();
-  $('b-scan').hidden = !IN_APP;
+  $('p-scan').hidden = !IN_APP;
   $('inv-scan-btn').hidden = !IN_APP;
-  // v2.7.4: versioned download URL — unique per app version, so no cache
-  // (browser / Cloudflare / proxy) can hand back a stale APK.
-  fetch('/app-version.txt', { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(
-    v => { $('b-android').href = '/app-' + (v.trim() || 'dev') + '.apk'; }).catch(() => {});
   const vhh = USER.visible_households || USER.households || [];
   const sel = $('household');
   sel.innerHTML = vhh.map(h => `<option value="${esc(h)}">${esc(h)}</option>`).join('');
@@ -798,6 +891,7 @@ function render() {
   bt.innerHTML = `<option value="">All types (${total})</option>` +
     types().map(t => `<option value="${esc(t.id)}">${esc(t.label)} (${counts[t.id] || 0})</option>`).join('');
   bt.value = buyType;
+  fillBuyCatOptions();
   renderBuyProducts();
 
   renderLevelChips();
@@ -807,11 +901,25 @@ function render() {
 }
 
 // ---------- purchase form (household tab) ----------
+function fillBuyCatOptions() {
+  const t = typeById(buyType);
+  let cats = t ? [...(t.categories || [])]
+    : [...new Set(DATA.products.map(p => p.category).filter(Boolean))];
+  if (buyCat && !cats.includes(buyCat)) buyCat = '';
+  $('b-cat').innerHTML = `<option value="">All categories</option>` +
+    cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  $('b-cat').value = buyCat;
+}
+
 function renderBuyProducts() {
-  const list = DATA.products.filter(p => !buyType || p.type === buyType);
-  $('b-product').innerHTML = list.map(p =>
-    `<option value="${esc(p.name)}\u0001${esc(p.manufacturer || '')}">` +
-    esc(p.name + (p.manufacturer ? ' — ' + p.manufacturer : '')) + `</option>`).join('');
+  const list = DATA.products.filter(p =>
+    (!buyType || p.type === buyType) &&
+    (!buyCat || (p.category || '') === buyCat));
+  $('b-product').innerHTML = list.map(p => {
+    const label = p.name + (p.manufacturer ? ' — ' + p.manufacturer : '') +
+      (p.size ? ' (' + p.size + ')' : '');
+    return `<option value="${esc(p.name)}\u0001${esc(p.manufacturer || '')}">` +
+      esc(label) + `</option>`; }).join('');
 }
 
 function suggestBestBefore(productName, manufacturer, el = 'b-date') {
@@ -825,7 +933,11 @@ function suggestBestBefore(productName, manufacturer, el = 'b-date') {
   $(el).value = d.toISOString().slice(0, 10);
 }
 
-$('b-type').addEventListener('change', e => { buyType = e.target.value; renderBuyProducts(); });
+$('b-type').addEventListener('change', e => {
+  buyType = e.target.value; buyCat = '';
+  fillBuyCatOptions(); renderBuyProducts();
+});
+$('b-cat').addEventListener('change', e => { buyCat = e.target.value; renderBuyProducts(); });
 $('b-product').addEventListener('change', () => {
   const [name, manufacturer] = ($('b-product').value || '').split('\u0001');
   if (!$('b-date').value) suggestBestBefore(name, manufacturer);
@@ -853,6 +965,16 @@ function visibleInventory() {
     rows = rows.filter(r =>
       r.product.toLowerCase().includes(q) ||
       (r.manufacturer || '').toLowerCase().includes(q));
+  }
+  for (const [k, q] of Object.entries(invColFilter)) {
+    if (!q) continue;
+    rows = rows.filter(r => {
+      let v = r[k];
+      if (k === 'product') v = (r.product || '') + ' ' + (r.manufacturer || '');
+      if (k === 'type') v = typeLabel(v);
+      if (k === 'level') v = LEVEL_LABEL[v] || v;
+      return String(v == null ? '' : v).toLowerCase().includes(q);
+    });
   }
   if (invLevel && invLevel !== 'all') rows = rows.filter(r => r.level === invLevel);
   rows = [...rows].sort((a, b) => {
@@ -954,6 +1076,11 @@ $('inv-save-btn').addEventListener('click', async () => {
 });
 
 $('inv-filter').addEventListener('input', e => { invFilter = e.target.value; renderInventory(); });
+document.querySelectorAll('#t-inventory thead input[data-col]').forEach(inp =>
+  inp.addEventListener('input', e => {
+    invColFilter[e.target.dataset.col] = e.target.value.toLowerCase();
+    renderInventory();
+  }));
 $('t-inventory').querySelector('thead').addEventListener('click', e => {
   const th = e.target.closest('th.sortable');
   if (!th) return;
@@ -983,27 +1110,20 @@ async function handleBarcode(code) {
   const j = await api('GET', '/api/barcode?code=' + encodeURIComponent(code));
   if (j.product) {
     closeScan();
-    document.querySelector('#main-tabs button[data-tab="household"]').click();
-    buyType = ''; $('b-type').value = ''; renderBuyProducts();
-    $('b-product').value = j.product.name + '\u0001' + (j.product.manufacturer || '');
-    if (!$('b-product').value) renderBuyProducts(),
-      $('b-product').value = j.product.name + '\u0001' + (j.product.manufacturer || '');
-    if (!$('b-date').value)
-      suggestBestBefore(j.product.name, j.product.manufacturer || '');
-    $('b-qty').value = 1;
-    msg('msg-buy', `Scanned: ${j.product.name}` +
+    msg('msg-scan', `Already on the list: ${j.product.name}` +
       (j.product.manufacturer ? ` — ${j.product.manufacturer}` : '') +
-      ' — check the date &amp; quantity, then press Buy.', true);
+      (j.product.size ? ` (${j.product.size})` : '') +
+      '. Use 📷 Scan next to "Record a purchase" to add it to the inventory.', true);
+  } else if (canEditProducts()) {
+    closeScan();
+    document.querySelector('#main-tabs button[data-tab="products"]').click();
+    $('p-barcode').value = code;
+    msg('msg-product', `Barcode ${code} is not on the list yet — continue ` +
+      'adding the product details below, then press Add product.', true);
+    $('p-name').focus();
   } else {
     msg('msg-scan', `Barcode ${code} is not mapped yet.` +
-      (isGlobalAdmin() ? '' : ' Ask a global admin to map it.'), false);
-    if (isGlobalAdmin()) {
-      closeScan();
-      document.querySelector('#main-tabs button[data-tab="barcodes"]').click();
-      $('bc-code').value = code;
-      renderBarcodeProductOptions();
-      msg('msg-barcodes', `Barcode ${code} scanned — pick a product and press Map.`, true);
-    }
+      ' Ask an admin to add it to the product list.', false);
   }
 }
 
@@ -1045,7 +1165,7 @@ function closeScan() {
   if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
   $('scan-video').srcObject = null;
 }
-$('b-scan').addEventListener('click', openScan);
+$('p-scan').addEventListener('click', openScan);
 $('scan-close').addEventListener('click', closeScan);
 
 // ---------- inventory scan (v2.8: separate from the product-list scan) ----------
@@ -1078,9 +1198,9 @@ async function handleInvBarcode(code, resume) {
     msg('msg-inv-scan', '', true);
   } else {
     msg('msg-inv-scan', `Barcode ${code} is not mapped yet.` +
-      (isGlobalAdmin()
-        ? ' Use the 📷 button in the top bar to map it to a product first.'
-        : ' Ask a global admin to map it.'), false);
+      (canEditProducts()
+        ? ' Use 📷 Scan in "Add a product" to add it to the product list first.'
+        : ' Ask an admin to add it to the product list.'), false);
     setTimeout(resume, 1500);   // show the message, then keep scanning
   }
 }
@@ -1154,41 +1274,107 @@ $('f-inv-scan').addEventListener('submit', async e => {
 
 // ---------- barcodes tab (global admin) ----------
 let BARCODES = [];
+let bcEdit = false;
+let bcPending = { del: new Set(), add: new Map() };   // buffered until Confirm
+let bcFilters = { barcode: '', name: '', manufacturer: '', size: '' };
+
 async function loadBarcodes() {
   if (!isGlobalAdmin()) return;
   const j = await api('GET', '/api/admin/barcodes');
   BARCODES = j.barcodes || [];
   renderBarcodes();
 }
+
+function visibleBarcodes() {
+  return BARCODES.filter(b =>
+    (!bcFilters.barcode || (b.barcode || '').toLowerCase().includes(bcFilters.barcode)) &&
+    (!bcFilters.name || (b.name || '').toLowerCase().includes(bcFilters.name)) &&
+    (!bcFilters.manufacturer ||
+      (b.manufacturer || '').toLowerCase().includes(bcFilters.manufacturer)) &&
+    (!bcFilters.size || (b.size || '').toLowerCase().includes(bcFilters.size)));
+}
+
 function renderBarcodes() {
-  $('t-barcodes').querySelector('tbody').innerHTML =
-    BARCODES.map(b => `<tr><td><code>${esc(b.barcode)}</code></td>
-      <td>${esc(b.name)}${b.manufacturer ? ` <span class="muted">— ${esc(b.manufacturer)}</span>` : ''}</td>
-      <td><button class="del" title="Remove mapping"
-        onclick="bcDel('${esc(b.barcode)}')">✕</button></td></tr>`).join('')
-    || '<tr><td colspan="3" class="muted">No barcodes mapped yet.</td></tr>';
+  $('bc-edit-btn').hidden = bcEdit;
+  $('bc-edit-actions').hidden = !bcEdit;
+  $('f-bc-add').hidden = !bcEdit;
+  const rows = visibleBarcodes();
+  $('t-barcodes').querySelector('tbody').innerHTML = rows.map(b => {
+    const deleted = bcPending.del.has(b.barcode);
+    const rowStyle = deleted ? ' style="opacity:.45;text-decoration:line-through"' : '';
+    const delBtn = bcEdit && !deleted
+      ? `<button class="del" title="Remove mapping"
+          onclick="bcDel('${esc(b.barcode)}')">✕</button>` : '';
+    return `<tr${rowStyle}><td><code>${esc(b.barcode)}</code></td>
+      <td>${esc(b.name)}</td>
+      <td>${esc(b.manufacturer || '—')}</td>
+      <td>${esc(b.size || '—')}</td>
+      <td>${delBtn}</td></tr>`;
+  }).join('') || '<tr><td colspan="5" class="muted">No barcodes match — ' +
+    'import a country list in Settings → Barcodes, or add mappings in edit mode.</td></tr>';
+  $('empty-barcodes').hidden = rows.length > 0;
+  const n = bcPending.del.size + bcPending.add.size;
+  $('bc-pending').textContent = bcEdit && n ? `(${n} pending change${n > 1 ? 's' : ''})` : '';
+  $('bc-count').textContent = rows.length === BARCODES.length
+    ? rows.length + ' barcode(s)' : rows.length + ' of ' + BARCODES.length + ' barcode(s)';
   renderBarcodeProductOptions();
 }
+
 function renderBarcodeProductOptions() {
-  $('bc-product').innerHTML = DATA.products.map(p =>
-    `<option value="${esc(p.name)}\u0001${esc(p.manufacturer || '')}">` +
-    esc(p.name + (p.manufacturer ? ' — ' + p.manufacturer : '')) + '</option>').join('');
+  $('bc-product').innerHTML = DATA.products.map(p => {
+    const label = p.name + (p.manufacturer ? ' — ' + p.manufacturer : '') +
+      (p.size ? ' (' + p.size + ')' : '');
+    return `<option value="${esc(p.name)}\u0001${esc(p.manufacturer || '')}">` +
+      esc(label) + '</option>'; }).join('');
 }
-window.bcDel = async code => {
-  if (!confirm(`Remove the mapping for barcode ${code}?`)) return;
-  const j = await api('DELETE', '/api/admin/barcodes/' + encodeURIComponent(code));
-  if (j.error) return msg('msg-barcodes', j.error, false);
-  loadBarcodes();
+
+window.bcDel = code => {
+  bcPending.del.add(code);
+  bcPending.add.delete(code);
+  renderBarcodes();
 };
-$('f-barcode').addEventListener('submit', async e => {
-  e.preventDefault();
-  const [name, manufacturer] = ($('bc-product').value || '').split('\u0001');
-  const code = $('bc-code').value.trim();
-  const j = await api('POST', '/api/admin/barcodes', {
-    barcode: code, name, manufacturer: manufacturer || '' });
-  msg('msg-barcodes', j.error || `Barcode ${code} mapped to ${name} ✓`, !j.error);
-  if (!j.error) { $('bc-code').value = ''; loadBarcodes(); }
+
+$('bc-edit-btn').addEventListener('click', () => {
+  bcEdit = true; renderBarcodes();
 });
+$('bc-cancel-btn').addEventListener('click', () => {
+  bcEdit = false;
+  bcPending = { del: new Set(), add: new Map() };
+  renderBarcodes();
+});
+$('bc-confirm-btn').addEventListener('click', async () => {
+  const btn = $('bc-confirm-btn');
+  btn.disabled = true;
+  for (const [code, p] of bcPending.add) {
+    const j = await api('POST', '/api/admin/barcodes', {
+      barcode: code, name: p.name, manufacturer: p.manufacturer });
+    if (j.error) { msg('msg-barcodes', j.error, false); btn.disabled = false; return; }
+  }
+  for (const code of bcPending.del) {
+    const j = await api('DELETE', '/api/admin/barcodes/' + encodeURIComponent(code));
+    if (j.error) { msg('msg-barcodes', j.error, false); btn.disabled = false; return; }
+  }
+  bcEdit = false;
+  bcPending = { del: new Set(), add: new Map() };
+  btn.disabled = false;
+  msg('msg-barcodes', 'Changes confirmed ✓', true);
+  loadBarcodes();
+});
+$('f-bc-add').addEventListener('submit', e => {
+  e.preventDefault();
+  const code = $('bc-code').value.trim();
+  const [name, manufacturer] = ($('bc-product').value || '').split('\u0001');
+  if (!code || !name) return;
+  bcPending.del.delete(code);
+  bcPending.add.set(code, { name, manufacturer: manufacturer || '' });
+  $('bc-code').value = '';
+  renderBarcodes();
+});
+document.querySelectorAll('#t-barcodes thead input[data-col]').forEach(inp =>
+  inp.addEventListener('input', e => {
+    bcFilters[e.target.dataset.col] = e.target.value.toLowerCase();
+    renderBarcodes();
+  }));
 
 // ---------- products tab ----------
 function visibleProducts() {
@@ -1199,7 +1385,15 @@ function visibleProducts() {
       p.name.toLowerCase().includes(q) ||
       (p.manufacturer || '').toLowerCase().includes(q) ||
       typeLabel(p.type).toLowerCase().includes(q) ||
-      (p.category || '').toLowerCase().includes(q));
+      (p.category || '').toLowerCase().includes(q) ||
+      (p.size || '').toLowerCase().includes(q));
+  }
+  for (const [k, q] of Object.entries(prodColFilter)) {
+    if (!q) continue;
+    rows = rows.filter(p => {
+      const v = k === 'type' ? typeLabel(p.type) : (p[k] || '');
+      return String(v).toLowerCase().includes(q);
+    });
   }
   rows = [...rows].sort((a, b) => {
     const k = prodSort.key, d = prodSort.dir;
@@ -1238,6 +1432,11 @@ function renderProducts() {
 }
 
 $('prod-filter').addEventListener('input', e => { prodFilter = e.target.value; renderProducts(); });
+document.querySelectorAll('#t-products thead input[data-col]').forEach(inp =>
+  inp.addEventListener('input', e => {
+    prodColFilter[e.target.dataset.col] = e.target.value.toLowerCase();
+    renderProducts();
+  }));
 $('t-products').querySelector('thead').addEventListener('click', e => {
   const th = e.target.closest('th.sortable');
   if (!th) return;
@@ -1249,13 +1448,17 @@ $('p-type').addEventListener('change', () => fillCatOptions('p-cat', $('p-type')
 $('pe-type').addEventListener('change', () => fillCatOptions('pe-cat', $('pe-type').value, null));
 
 $('p-add').addEventListener('click', async () => {
-  const size = $('p-size').value
-    ? `${$('p-size').value} ${$('p-size-unit').value}` : '';
   const j = await api('POST', '/api/products', {
     type: $('p-type').value, category: $('p-cat').value,
-    name: $('p-name').value, manufacturer: $('p-man').value, size });
+    name: $('p-name').value, manufacturer: $('p-man').value,
+    size: $('p-size').value.trim(),
+    barcode: $('p-barcode').value.trim() });
   msg('msg-product', j.error || 'Saved ✓', !j.error);
-  if (!j.error) { $('p-name').value = ''; $('p-size').value = ''; load(); }
+  if (!j.error) {
+    $('p-name').value = ''; $('p-size').value = '';
+    $('p-barcode').value = '';
+    load();
+  }
 });
 
 window.delProduct = async (name, manufacturer) => {
@@ -1268,10 +1471,6 @@ window.delProduct = async (name, manufacturer) => {
 
 // edit product modal — all fields (household/global admin)
 let peOld = null;
-function parseSize(size) {
-  const m = String(size || '').match(/^([\d.]+)\s*(g|ml)$/i);
-  return m ? [m[1], m[2].toLowerCase()] : [String(size || ''), 'g'];
-}
 window.editProduct = async (name, manufacturer) => {
   const p = DATA.products.find(x => x.name === name && (x.manufacturer || '') === manufacturer);
   if (!p) return;
@@ -1280,9 +1479,7 @@ window.editProduct = async (name, manufacturer) => {
   fillCatOptions('pe-cat', $('pe-type').value, p.category || '');
   $('pe-name').value = p.name;
   $('pe-man').value = p.manufacturer || '';
-  const [amt, unit] = parseSize(p.size);
-  $('pe-size').value = /^\d/.test(amt) ? amt : '';
-  $('pe-size-unit').value = unit;
+  $('pe-size').value = p.size || '';
   msg('msg-pe', '');
   $('pe-modal').hidden = false;
   $('pe-name').focus();
@@ -1290,12 +1487,11 @@ window.editProduct = async (name, manufacturer) => {
 $('pe-close').addEventListener('click', () => $('pe-modal').hidden = true);
 $('pe-cancel').addEventListener('click', () => $('pe-modal').hidden = true);
 $('pe-save').addEventListener('click', async () => {
-  const size = $('pe-size').value
-    ? `${$('pe-size').value} ${$('pe-size-unit').value}` : '';
   const j = await api('PUT', '/api/products', {
     old_name: peOld.name, old_manufacturer: peOld.manufacturer,
     type: $('pe-type').value, category: $('pe-cat').value,
-    name: $('pe-name').value, manufacturer: $('pe-man').value, size });
+    name: $('pe-name').value, manufacturer: $('pe-man').value,
+    size: $('pe-size').value.trim() });
   if (j.error) return msg('msg-pe', j.error, false);
   $('pe-modal').hidden = true;
   load();
@@ -1338,6 +1534,7 @@ async function openSettings(keepTab) {
   $('tab-users').hidden = !canEditProducts();
   $('tab-auth').hidden = !isGlobalAdmin();
   $('tab-types').hidden = !isGlobalAdmin();
+  $('tab-bclist').hidden = !isGlobalAdmin();
   // households list (own households for users, all for global admin)
   const h = await api('GET', '/api/admin/households');
   ADMIN.households = h.households || [];
@@ -1354,9 +1551,34 @@ async function openSettings(keepTab) {
   if (isGlobalAdmin()) {
     const c = await api('GET', '/api/admin/config');
     if (!c.error) { ADMIN.config = c; renderAuth(c); renderTypes(c.types || []); }
+    const cl = await api('GET', '/api/admin/barcode-countries');
+    renderBarcodeCountries(cl.countries || []);
   }
   showTab(keepTab || 'general');
 }
+
+function renderBarcodeCountries(countries) {
+  $('bc-country').innerHTML = countries.map(c =>
+    `<option value="${esc(c.country)}">${esc(c.label)} — ${c.count} barcodes` +
+    (c.imported ? ' (already imported)' : '') + `</option>`).join('') ||
+    '<option value="">(no lists available)</option>';
+}
+
+$('bc-import').addEventListener('click', async () => {
+  const country = $('bc-country').value;
+  if (!country) return msg('msg-bclist', 'Choose a country list to import.', false);
+  const label = $('bc-country').selectedOptions[0].textContent;
+  if (!confirm(`Import the pre-scanned barcode list for ${label}?` +
+      ' Products that already exist are not duplicated.')) return;
+  const j = await api('POST', '/api/admin/barcodes/import', { country });
+  if (j.error) return msg('msg-bclist', j.error, false);
+  msg('msg-bclist', j.already
+    ? `The ${j.country} list was already imported — nothing added.`
+    : `Added ${j.added} product(s) and mapped ${j.mapped} barcode(s) from ` +
+      `the ${j.country} list ✓`, true);
+  await openSettings('barcodes');
+  loadBarcodes();
+});
 
 function roleLabel(u) {
   if (u.role === 'global_admin') return '⭐ Global admin';
