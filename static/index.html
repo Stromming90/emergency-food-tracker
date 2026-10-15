@@ -878,6 +878,11 @@ function showApp() {
   if (HH) sel.value = HH;
   load();
   checkAppUpdate();
+  // v2.12.6 (app): ask the native side to run one poll right now, so
+  // the "Last check" line refreshes on every app open instead of
+  // showing a stale result (e.g. HTTP 401 from a poll that ran while
+  // logged out). pollNow exists from app v2.12.6.
+  try { if (window.EFTNative && window.EFTNative.pollNow) window.EFTNative.pollNow(); } catch (e) {}
 }
 
 async function boot() {
@@ -2017,7 +2022,9 @@ async function refreshPushState() {
           '"Open notification settings" and allow notifications'}.`;
         txt += ` Background job: ${a[1] === 'true' ? 'scheduled ✓' : 'NOT scheduled — update the app'}.`;
         if (a[2] && a[2] !== '0')
-          txt += ` Last check: ${new Date(Number(a[2])).toLocaleString()} (${a[3]}).`;
+          txt += ` Last check: ${new Date(Number(a[2])).toLocaleString()} (${esc(a[3])}).` +
+            (String(a[3]).includes('401') ? ' The last check ran while logged ' +
+              'out — reopen the app (or wait for the next check) to refresh it.' : '');
         else txt += ' No background check has run yet (the first one ' +
           'sets the baseline silently).';
         if (a[4] === 'true') txt += ' ⚠ The app recorded a crash — open ' +

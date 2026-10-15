@@ -1,9 +1,20 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.12.6)
+Emergency Food Storage Tracker — Web UI server (v2.12.7)
 =====================================================
 Zero-dependency web server (Python stdlib only).
 
+v2.12.7:
+- Android app 2.12.6: a background check now also runs IMMEDIATELY
+   every time the app is opened (new EFTNative.pollNow() called by
+   the web UI at startup), so the Settings -> Notifications status
+   refreshes right away instead of waiting up to 30 minutes. This
+   also clears the "Last check: HTTP 401" state (a poll that ran
+   while the session had expired) — after re-login the next app
+   open re-polls with the fresh cookie.
+- The test-notification button and pollNow post their work to the
+   main thread and report every failure with a visible toast (plus
+   the crash log), so nothing fails silently anymore.
 v2.12.6:
 - Android app 2.12.5: the last missing permission. JobScheduler
    requires ACCESS_NETWORK_STATE for jobs with a connectivity
@@ -1572,7 +1583,7 @@ class Handler(BaseHTTPRequestHandler):
                     "oidc_enabled": oidc_enabled(),
                     "password_login": password_login_enabled(),
                     "oidc_name": get_config()["oidc"].get("name") or "SSO",
-                    "version": "2.12.6",
+                    "version": "2.12.7",
                     "user": ({**user_public(user),
                               "api_key": user.get("api_key", ""),
                               "visible_households": user_households(user) if not is_global_admin(user)
@@ -2272,7 +2283,7 @@ def main():
     # v2.11: background web-push checker (daemon)
     threading.Thread(target=push_loop, daemon=True).start()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.12.6: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v2.12.7: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 

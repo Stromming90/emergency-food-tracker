@@ -31,6 +31,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.os.Looper;
 import android.widget.Toast;
 
 /**
@@ -47,6 +48,14 @@ import android.widget.Toast;
  * the system DownloadManager, so the web UI's "Download update" link
  * downloads the new APK and tapping the system notification opens the
  * installer (installs over the current app; same signing key).
+ *
+ * v2.12.6: poll-on-open — the web UI now calls EFTNative.pollNow()
+ * when it boots, so a background check runs immediately after the app
+ * opens (and after login), instead of waiting up to 30 minutes. The
+ * test button and pollNow post their work to the main thread and
+ * report failures with a visible toast + CrashLog, so nothing fails
+ * silently. This fixes "Last check: HTTP 401" (the poll ran while the
+ * session had expired; now it re-runs right after login).
  *
  * v2.12.5: ACCESS_NETWORK_STATE added — JobScheduler rejects jobs
  * with a connectivity constraint without it (SecurityException on
@@ -91,7 +100,7 @@ public class MainActivity extends Activity {
     private static final int JOB_ID = 1;
     private static final String PREFS = "eft";
     private static final String KEY_URL = "server_url";
-    private static final String APP_VERSION = "2.12.5";
+    private static final String APP_VERSION = "2.12.6";
     // Custom deep-link scheme: an OIDC flow that somehow ends up in the
     // browser redirects back into the app via win.strommingflix.eft://…
     private static final String DL_SCHEME = "win.strommingflix.eft";
@@ -250,7 +259,7 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         // Token used by the web app to enable the scan buttons.
-        s.setUserAgentString(s.getUserAgentString() + " EFT-Android/2.12.5");
+        s.setUserAgentString(s.getUserAgentString() + " EFT-Android/2.12.6");
 
         // v2.12.3: bridge for the web UI's native-notification controls
         web.addJavascriptInterface(new NativeBridge(), "EFTNative");
@@ -499,13 +508,49 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void test() {
-            try {
-                PollJobService.notify(MainActivity.this,
-                        "Test notification — native alerts are working ✓ " +
-                        "(background checks run about every 30 minutes).");
-            } catch (Throwable t) {
-                CrashLog.store(MainActivity.this, t);
-            }
+            // v2.12.6: bridge methods run on a non-Looper thread; posting
+            // to the main thread is safe for notifications and lets us
+            // show a toast so the result is never silent.
+            new android.os.Handler(Looper.getMainLooper()).post(new Runnable() {
+                @Override public void run() {
+                    try {
+                        PollJobService.notify(MainActivity.this,
+                                "Test notification — native alerts are working ✓ " +
+                                "(background checks run about every 30 minutes).");
+                        Toast.makeText(MainActivity.this,
+                                "Test notification sent — check the notification shade",
+                                Toast.LENGTH_LONG).show();
+                    } catch (Throwable t) {
+                        CrashLog.store(MainActivity.this, t);
+                        Toast.makeText(MainActivity.this,
+                                "Test notification FAILED: " + t,
+                                Toast.LENGTH_LONG).show();
+                    }
+                }
+            });
+        }
+
+        /**
+         * v2.12.6: run one poll right now (called by the web UI when the
+         * app opens, so the status line refreshes immediately instead of
+         * showing a stale "HTTP 401" from a poll that ran while logged
+         * out).
+         */
+        @JavascriptInterface
+        public void pollNow() {
+            new android.os.Handler(Looper.getMainLooper()).post(new Runnable() {
+                @Override public void run() {
+                    try {
+                        PollJobService.pollNow(MainActivity.this);
+                        Toast.makeText(MainActivity.this,
+                                "Checking now…", Toast.LENGTH_SHORT).show();
+                    } catch (Throwable t) {
+                        CrashLog.store(MainActivity.this, t);
+                        Toast.makeText(MainActivity.this,
+                                "Check failed: " + t, Toast.LENGTH_LONG).show();
+                    }
+                }
+            });
         }
 
         @JavascriptInterface

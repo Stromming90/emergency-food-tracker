@@ -31,6 +31,13 @@ import java.util.UUID;
  * successful poll refreshes the login session server-side, so the app
  * keeps working in the background without re-login.
  *
+ * v2.12.6: a poll can be run on demand. The web UI calls
+ * EFTNative.pollNow() right after login, so the "Last check" status is
+ * fresh immediately (a background 401 recorded while the user was
+ * logged out used to linger for up to 30 minutes). The poll logic is
+ * static (doPoll) and shared by the job and the bridge; the session
+ * cookie is still read only on the main thread.
+ *
  * v2.12.3: the notification code moved into a static notify() method
  * (shared with the in-app test button), and every poll records a
  * last_poll / last_poll_result pair in the shared prefs so the web UI
@@ -79,7 +86,7 @@ public class PollJobService extends JobService {
         final String fBase = base, fDevice = device, fCookie = cookie;
         worker = new Thread(() -> {
             try {
-                poll(fBase, fDevice, fCookie);
+                doPoll(this, fBase, fDevice, fCookie);
             } catch (Throwable t) {
                 CrashLog.store(PollJobService.this, t);
             } finally {
@@ -90,6 +97,38 @@ public class PollJobService extends JobService {
         return true;
     }
 
+    /**
+     * v2.12.6: run one poll right now. MUST be called from the main
+     * thread (the cookie read requires it); the HTTP runs on a worker.
+     */
+    static void pollNow(final android.content.Context ctx) {
+        try {
+            android.content.SharedPreferences prefs =
+                    ctx.getSharedPreferences("eft", android.content.Context.MODE_PRIVATE);
+            String base = prefs.getString("server_url", null);
+            if (base == null || base.isEmpty()) return;   // not set up
+            String device = prefs.getString("device_id", null);
+            if (device == null) {
+                device = java.util.UUID.randomUUID().toString();
+                prefs.edit().putString("device_id", device).apply();
+            }
+            String cookie = android.webkit.CookieManager.getInstance().getCookie(base);
+            if (cookie == null || cookie.isEmpty()) {
+                record(ctx, "no session cookie (not logged in)");
+                return;
+            }
+            new Thread(() -> {
+                try {
+                    doPoll(ctx, base, device, cookie);
+                } catch (Throwable t) {
+                    CrashLog.store(ctx, t);
+                }
+            }).start();
+        } catch (Throwable t) {
+            CrashLog.store(ctx, t);
+        }
+    }
+
     @Override
     public boolean onStopJob(JobParameters params) {
         try {
@@ -98,15 +137,15 @@ public class PollJobService extends JobService {
         return false;   // no retry; the next periodic run comes anyway
     }
 
-    private void record(String result) {
+    static void record(android.content.Context ctx, String result) {
         try {
-            getSharedPreferences("eft", MODE_PRIVATE).edit()
+            ctx.getSharedPreferences("eft", android.content.Context.MODE_PRIVATE).edit()
                     .putLong("last_poll", System.currentTimeMillis())
                     .putString("last_poll_result", result).apply();
         } catch (Throwable ignored) { }
     }
 
-    private void poll(String base, String device, String cookie) {
+    static void doPoll(final android.content.Context ctx, String base, String device, String cookie) {
         HttpURLConnection c = null;
         try {
             URL u = new URL(base + "/api/push/inbox?device=" + device);
@@ -115,7 +154,7 @@ public class PollJobService extends JobService {
             c.setConnectTimeout(15000);
             c.setReadTimeout(15000);
             int code = c.getResponseCode();
-            if (code != 200) { record("HTTP " + code); return; }
+            if (code != 200) { record(ctx, "HTTP " + code); return; }
             InputStream in = c.getInputStream();
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             byte[] buf = new byte[8192];
@@ -124,7 +163,7 @@ public class PollJobService extends JobService {
             JSONObject o = new JSONObject(bos.toString("UTF-8"));
             JSONArray alerts = o.optJSONArray("alerts");
             int more = o.optInt("more", 0);
-            if (alerts == null || alerts.length() == 0) { record("ok (no alerts)"); return; }
+            if (alerts == null || alerts.length() == 0) { record(ctx, "ok (no alerts)"); return; }
             StringBuilder body = new StringBuilder();
             for (int i = 0; i < alerts.length(); i++) {
                 if (i > 0) body.append("\n");
@@ -132,10 +171,10 @@ public class PollJobService extends JobService {
             }
             if (more > 0) body.append("\n… and ").append(more).append(" more");
             notify(this, body.toString());
-            record("ok (" + alerts.length() + " alert(s))");
+            record(ctx, "ok (" + alerts.length() + " alert(s))");
         } catch (Throwable t) {
             CrashLog.store(this, t);
-            record("error: " + t);
+            record(ctx, "error: " + t);
         } finally {
             if (c != null) {
                 try { c.disconnect(); } catch (Throwable ignored) { }

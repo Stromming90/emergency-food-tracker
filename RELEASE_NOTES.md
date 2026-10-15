@@ -1,3 +1,31 @@
+# v2.12.7 — Fix: "Last check: HTTP 401" + silent test button (app 2.12.6)
+
+## What was wrong
+The background check itself worked (permission granted, job
+scheduled), but the status line showed "Last check: HTTP 401":
+the poll had run while the session cookie was expired/logged out,
+and the app then waited up to 30 minutes before trying again —
+so the user never saw a successful check. The test button also
+produced nothing: it raised the notification from the WebView's
+bridge thread without any visible feedback when it failed.
+
+## What is fixed (app 2.12.6)
+- A poll now runs **immediately every time the app opens** (new
+  `EFTNative.pollNow()` bridge, called by the web UI at startup).
+  After a login, the very next app open re-polls with the fresh
+  cookie — the 401 state clears itself.
+- The test button and pollNow post to the main thread and show a
+  toast for success ("Test notification sent — check the
+  notification shade") and for failure — plus the crash log —
+  so nothing fails silently anymore.
+- The web UI explains a stale 401 result ("the last check ran
+  while logged out — reopen the app to refresh it").
+
+## Upgrade
+Update the server (docker compose pull && up -d), then update the
+app from Settings → About → Download. The old crash report in the
+dialog is stale — tap Dismiss.
+
 # v2.12.6 — Fix: background job still not scheduled (app 2.12.5)
 
 ## What was wrong (from the crash report dialog)

@@ -28,7 +28,7 @@ echo "[2/7] aapt2 link"
   -I "$ANDROID_JAR" \
   --manifest "$SRC/AndroidManifest.xml" \
   --min-sdk-version 24 --target-sdk-version 34 \
-  --version-code 37 --version-name 2.12.5 \
+  --version-code 38 --version-name 2.12.6 \
   "$OUT/res.zip"
 
 echo "[3/7] javac"
