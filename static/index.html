@@ -1795,11 +1795,15 @@ async function refreshPushState() {
   const enabledHere = !!local && remote.includes(local);
   $('push-enable').hidden = enabledHere;
   $('push-disable').hidden = !enabledHere;
-  if (!PUSH_SUPPORTED) {
-    st.textContent = 'Push notifications are not available in this app ' +
-      '(the Android WebView cannot receive them). Open the tracker in ' +
-      'Chrome or Firefox on your phone — or add it to the home screen ' +
-      '— and enable notifications there.';
+  if (IN_APP) {
+    st.textContent = 'Notifications on this device are handled by the ' +
+      'Android app itself: update the app to v2.12.0 or later (Settings → ' +
+      'About → download) and allow notifications when prompted. Alerts ' +
+      'then arrive as system notifications, even when the app is closed.';
+  } else if (!PUSH_SUPPORTED) {
+    st.textContent = 'Push notifications are not available in this ' +
+      'browser. Open the tracker in Chrome or Firefox — or add it to ' +
+      'the home screen — and enable notifications there.';
   } else if (enabledHere) {
     st.textContent = 'Notifications are enabled on this device ✓ — ' +
       'alerts will arrive even when the app is closed.';
