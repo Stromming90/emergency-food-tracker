@@ -1,3 +1,26 @@
+# v2.12.2 — Fix: the update button did nothing on the old app
+
+## What was wrong
+On a phone still running app **v2.12.0**, tapping "⬇ Download update"
+looked dead: that app version has no download handler, and the
+behind-the-scenes `intent://` URL used to bounce you to the browser
+was silently swallowed on some devices.
+
+## What happens now
+- Tapping **Download** in the old app opens a **"Get the app update"**
+  dialog with two buttons:
+  - **Open in Chrome** — targets Chrome explicitly.
+  - **Open in your browser** — generic browser intent.
+  Both use a real link click, which old WebViews handle far more
+  reliably than a JavaScript redirect.
+- If a browser still does not open, the dialog shows the **server
+  address to type into any browser**, with the exact clicks spelled
+  out (Settings ⚙️ → About → ⬇ Download).
+- Apps on v2.12.1+ keep the one-tap in-app download; browsers keep the
+  direct download. **The APK is unchanged (2.12.1) — this is a web UI
+  fix, so `docker compose pull && docker compose up -d` is all you
+  need.**
+
 # v2.12.1 — Download the app from the web & update it from inside the app
 
 ## Find the app from the website

@@ -638,6 +638,29 @@
   </div>
 </div>
 
+<!-- app update modal (old app versions, v2.12.2) -->
+<div class="modal-bg" id="upd-modal" hidden>
+  <div class="modal" style="max-width:440px">
+    <div class="row" style="justify-content:space-between">
+      <h2>Get the app update</h2>
+      <button class="del" id="upd-close" title="Close">✕</button>
+    </div>
+    <p class="muted" id="upd-versions" style="margin:2px 0 8px"></p>
+    <p style="margin:0 0 6px">This app version can't download the update
+    by itself. Open the download page in your phone's browser:</p>
+    <div class="row" style="flex-direction:column;align-items:stretch;gap:6px">
+      <button id="upd-chrome">🌐 Open in Chrome</button>
+      <button id="upd-browser" class="ghost">Open in your browser</button>
+    </div>
+    <p class="muted" style="margin:10px 0 2px">If a browser did not open,
+    do it manually: open your browser app, go to the address below, then
+    <b>Settings ⚙️ → About → ⬇ Download</b>:</p>
+    <code id="upd-addr"></code>
+    <p class="muted" style="margin:8px 0 0">The APK installs over the
+    current app — your server address, login and settings are kept.</p>
+  </div>
+</div>
+
 <!-- barcode scan modal (Android app only) -->
 <div class="modal-bg" id="scan-modal" hidden>
   <div class="modal" style="max-width:400px">
@@ -1151,19 +1174,37 @@ function cmpVer(a, b) {           // returns -1 / 0 / 1
 // the browser via an intent:// URL instead.
 const FIRST_IN_APP_UPDATE = '2.12.1';
 
-function apkUrlViaBrowser() {
-  // intent:// URL — the app's shouldOverrideUrlLoading hands it to
-  // ACTION_VIEW, Android opens the browser on the APK URL, and the
-  // browser downloads and offers the install. Works on app v2.12.0.
+// intent:// link that asks Android to open the APK URL in a browser.
+// `pkg` optionally targets a specific browser (e.g. com.android.chrome).
+// Real <a> click — more reliable than location.href for custom schemes
+// in older WebViews.
+function openInBrowser(pkg) {
   const proto = location.protocol === 'https:' ? 'https' : 'http';
-  return `intent://${location.host}/app.apk#Intent;scheme=${proto};` +
-         'action=android.intent.action.VIEW;end';
+  const intent =
+      `intent://${location.host}/app.apk#Intent;scheme=${proto};` +
+      'action=android.intent.action.VIEW;' +
+      (pkg ? `package=${pkg};` : '') + 'end';
+  const a = document.createElement('a');
+  a.href = intent;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+function openUpdateModal() {
+  // Old app (< FIRST_IN_APP_UPDATE) without a download handler: guide
+  // the user to the browser. Show the address as a manual fallback.
+  $('upd-versions').textContent =
+    `Installed: v${APP_VER || '?'} · Available: v${SERVER_APP_VER || '?'}`;
+  $('upd-addr').textContent = location.origin + '/';
+  $('upd-modal').hidden = false;
 }
 
 function downloadAppApk() {
   if (IN_APP && APP_VER && cmpVer(APP_VER, FIRST_IN_APP_UPDATE) < 0) {
-    // Old app without a download handler: go via the browser.
-    location.href = apkUrlViaBrowser();
+    // Old app without a download handler: guided browser path.
+    openUpdateModal();
     return;
   }
   location.href = '/app.apk';   // browser: download; new app: DownloadManager
@@ -1218,8 +1259,8 @@ function refreshAboutTab() {
       'download manager; tap the notification when it completes to install.';
   } else if (IN_APP && APP_VER) {
     $('about-app-text').textContent = 'Download the latest version of the ' +
-      'app. Your current app version opens the download in the browser — ' +
-      'install it over the app as usual.';
+      'app. Your current app version cannot download on its own — the ' +
+      'update opens through your phone\'s browser.';
   } else {
     $('about-app-text').textContent = 'A tiny app that wraps this website ' +
       'with native notifications and camera barcode scanning. Download it, ' +
@@ -1232,6 +1273,9 @@ function refreshAboutTab() {
 
 $('app-download').addEventListener('click', downloadAppApk);
 $('app-banner-dl').addEventListener('click', downloadAppApk);
+$('upd-close').addEventListener('click', () => $('upd-modal').hidden = true);
+$('upd-chrome').addEventListener('click', () => openInBrowser('com.android.chrome'));
+$('upd-browser').addEventListener('click', () => openInBrowser(null));
 $('app-banner-x').addEventListener('click', () => {
   $('app-banner').hidden = true;
   if (!IN_APP) localStorage.setItem('appBannerDismissed', '1');

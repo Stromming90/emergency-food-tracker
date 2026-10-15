@@ -1,8 +1,19 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.12.1)
+Emergency Food Storage Tracker — Web UI server (v2.12.2)
 =====================================================
 Zero-dependency web server (Python stdlib only).
+
+v2.12.2:
+- Fix: on the old app (v2.12.0, which has no download handler), the
+   "Download update" button silently did nothing on devices where the
+   bare intent:// escape URL was swallowed. It now opens a guided
+   "Get the app update" dialog: buttons that open the APK download in
+   Chrome (explicit package) or the default browser via a real anchor
+   click (more reliable in old WebViews), plus the server address
+   spelled out for a manual browser visit. New apps (2.12.1+) and
+   plain browsers still download directly. UI/server only — the APK
+   is unchanged (still 2.12.1).
 
 v2.12.1:
 - Android app discoverability & updates: the web UI now has a
@@ -1507,7 +1518,7 @@ class Handler(BaseHTTPRequestHandler):
                     "oidc_enabled": oidc_enabled(),
                     "password_login": password_login_enabled(),
                     "oidc_name": get_config()["oidc"].get("name") or "SSO",
-                    "version": "2.12.1",
+                    "version": "2.12.2",
                     "user": ({**user_public(user),
                               "api_key": user.get("api_key", ""),
                               "visible_households": user_households(user) if not is_global_admin(user)
@@ -2207,7 +2218,7 @@ def main():
     # v2.11: background web-push checker (daemon)
     threading.Thread(target=push_loop, daemon=True).start()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.12.1: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v2.12.2: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 
