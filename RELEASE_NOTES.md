@@ -1,3 +1,36 @@
+# v2.12.4 — Fix: native app notifications never started (app 2.12.3)
+
+## What was wrong
+After enabling notifications in the app, nothing arrived. **Root
+cause**: the app schedules its background check as a *persisted*
+JobScheduler job — and Android requires the `RECEIVE_BOOT_COMPLETED`
+permission for persisted jobs. The manifest did not declare it, so
+Android rejected the schedule: no background job ever existed, so no
+notifications were ever raised. (This was also the true root cause of
+the earlier "app closes on open" crash — in app 2.12.0 the same
+exception was uncaught and killed the app; the 2.12.2 fix stopped the
+crash but left the failure silent.)
+
+## What is fixed (app 2.12.3)
+- `RECEIVE_BOOT_COMPLETED` added to the manifest — the background job
+  now schedules successfully and survives reboots.
+- A scheduling failure now shows a toast instead of dying silently.
+- **New: real status & controls in the app.** Settings ⚙️ →
+  Notifications now shows the actual native state — permission
+  allowed?, background job scheduled?, when the last background check
+  ran and what it returned — plus two buttons:
+  - **🔔 Test native notification** — raises a real system
+    notification immediately, so you can verify end to end.
+  - **Open notification settings** — jumps straight to the app's
+    notification settings if the permission was denied.
+
+## Update
+`docker compose pull && docker compose up -d`, then Settings ⚙️ →
+About → ⬇ Download in the app (2.12.3+) — installs over the current
+app. Then check Settings ⚙️ → Notifications: it should say
+"Permission: allowed ✓ · Background job: scheduled ✓", and the test
+button should pop a notification.
+
 # v2.12.3 — Fix: app crashed and could not be reopened (app 2.12.2)
 
 ## What was wrong

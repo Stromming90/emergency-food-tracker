@@ -31,6 +31,12 @@ import java.util.UUID;
  * successful poll refreshes the login session server-side, so the app
  * keeps working in the background without re-login.
  *
+ * v2.12.3: the notification code moved into a static notify() method
+ * (shared with the in-app test button), and every poll records a
+ * last_poll / last_poll_result pair in the shared prefs so the web UI
+ * can show the real background status (see the EFTNative bridge in
+ * MainActivity).
+ *
  * v2.12.2 CRASH FIX: this service runs inside the app's main process,
  * so any exception that escapes it kills the whole app — and since the
  * job is persisted, Android re-delivers it the moment the app process
@@ -92,6 +98,14 @@ public class PollJobService extends JobService {
         return false;   // no retry; the next periodic run comes anyway
     }
 
+    private void record(String result) {
+        try {
+            getSharedPreferences("eft", MODE_PRIVATE).edit()
+                    .putLong("last_poll", System.currentTimeMillis())
+                    .putString("last_poll_result", result).apply();
+        } catch (Throwable ignored) { }
+    }
+
     private void poll(String base, String device, String cookie) {
         HttpURLConnection c = null;
         try {
@@ -100,7 +114,8 @@ public class PollJobService extends JobService {
             c.setRequestProperty("Cookie", cookie);
             c.setConnectTimeout(15000);
             c.setReadTimeout(15000);
-            if (c.getResponseCode() != 200) return;   // not logged in / server down
+            int code = c.getResponseCode();
+            if (code != 200) { record("HTTP " + code); return; }
             InputStream in = c.getInputStream();
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             byte[] buf = new byte[8192];
@@ -109,16 +124,18 @@ public class PollJobService extends JobService {
             JSONObject o = new JSONObject(bos.toString("UTF-8"));
             JSONArray alerts = o.optJSONArray("alerts");
             int more = o.optInt("more", 0);
-            if (alerts == null || alerts.length() == 0) return;
+            if (alerts == null || alerts.length() == 0) { record("ok (no alerts)"); return; }
             StringBuilder body = new StringBuilder();
             for (int i = 0; i < alerts.length(); i++) {
                 if (i > 0) body.append("\n");
                 body.append(alerts.getString(i));
             }
             if (more > 0) body.append("\n… and ").append(more).append(" more");
-            raiseNotification(body.toString());
+            notify(this, body.toString());
+            record("ok (" + alerts.length() + " alert(s))");
         } catch (Throwable t) {
             CrashLog.store(this, t);
+            record("error: " + t);
         } finally {
             if (c != null) {
                 try { c.disconnect(); } catch (Throwable ignored) { }
@@ -126,7 +143,9 @@ public class PollJobService extends JobService {
         }
     }
 
-    private void raiseNotification(String body) {
+    /** Raise (or test) the alert notification. Static: shared by the
+     *  background poll and the in-app test button. */
+    static void notify(android.content.Context ctx, String body) {
         NotificationManager nm =
                 (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (nm == null) return;
@@ -137,12 +156,12 @@ public class PollJobService extends JobService {
             ch.setDescription("Expiring food alerts from the tracker server");
             nm.createNotificationChannel(ch);
         }
-        PendingIntent pi = PendingIntent.getActivity(this, 0,
-                new Intent(this, MainActivity.class),
+        PendingIntent pi = PendingIntent.getActivity(ctx, 0,
+                new Intent(ctx, MainActivity.class),
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder b = Build.VERSION.SDK_INT >= 26
-                ? new Notification.Builder(this, "alerts")
-                : new Notification.Builder(this);
+                ? new Notification.Builder(ctx, "alerts")
+                : new Notification.Builder(ctx);
         b.setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentTitle("Food storage alert")
                 .setContentText(body)

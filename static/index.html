@@ -599,6 +599,11 @@
         <button id="push-disable" class="ghost" hidden>Disable on this device</button>
         <button id="push-test" class="ghost">Send test notification</button>
       </div>
+      <!-- native (app) controls, v2.12.4: only when EFTNative bridge exists -->
+      <div class="row" id="native-row" hidden>
+        <button id="native-test" class="ghost">🔔 Test native notification</button>
+        <button id="native-settings" class="ghost">Open notification settings</button>
+      </div>
       <p class="muted" id="push-state" style="margin-top:6px"></p>
       <div class="msg" id="msg-notif"></div>
     </div>
@@ -1983,11 +1988,30 @@ async function refreshPushState() {
   $('push-enable').hidden = enabledHere;
   $('push-disable').hidden = !enabledHere;
   if (IN_APP) {
-    st.textContent = 'Notifications on this device are handled by the ' +
-      'Android app itself: allow notifications when prompted and they ' +
-      'arrive as system notifications, even when the app is closed. The ' +
-      'app checks for updates every time you open it — see the banner ' +
-      'above, or Settings → About → Download.';
+    $('native-row').hidden = !window.EFTNative;
+    if (window.EFTNative) {
+      // Real status from the app: permission | background job | last poll
+      let txt = 'Notifications are handled natively by the app: a ' +
+        'background check runs about every 30 minutes and raises a ' +
+        'system notification when items worsen.';
+      try {
+        const a = window.EFTNative.status().split('|');
+        txt += ` Permission: ${a[0] === 'true' ? 'allowed ✓' : 'BLOCKED — tap ' +
+          '"Open notification settings" and allow notifications'}.`;
+        txt += ` Background job: ${a[1] === 'true' ? 'scheduled ✓' : 'NOT scheduled — update the app'}.`;
+        if (a[2] && a[2] !== '0')
+          txt += ` Last check: ${new Date(Number(a[2])).toLocaleString()} (${a[3]}).`;
+        else txt += ' No background check has run yet (the first one ' +
+          'sets the baseline silently).';
+        if (a[4] === 'true') txt += ' ⚠ The app recorded a crash — open ' +
+          'the app home screen for the report dialog.';
+      } catch (e) { /* bridge not ready */ }
+      st.textContent = txt;
+    } else {
+      st.textContent = 'Notifications on this device are handled by the ' +
+        'Android app itself. Update the app to v2.12.3 or later (Settings ' +
+        '→ About → Download) to enable and test them here.';
+    }
   } else if (!PUSH_SUPPORTED) {
     st.textContent = 'Push notifications are not available in this ' +
       'browser. Open the tracker in Chrome or Firefox — or add it to ' +
@@ -2000,8 +2024,7 @@ async function refreshPushState() {
   }
 }
 
-$('push-enable').addEventListener('click', async () => {
-  if (!PUSH_SUPPORTED) return msg('msg-notif',
+$('push-enable').addEventListener('click', async () => {  if (!PUSH_SUPPORTED) return msg('msg-notif',
     'Push notifications are not available in this app. Open the tracker ' +
     'in Chrome or Firefox on your phone and enable them there.', false);
   let perm = 'Notification' in window ? Notification.permission : 'denied';
@@ -2053,6 +2076,20 @@ $('push-test').addEventListener('click', async () => {
   msg('msg-notif',
     j.error || 'Test notification sent ✓ — check your notifications.',
     !j.error);
+});
+
+// native app test / settings (v2.12.4, via the EFTNative bridge)
+$('native-test').addEventListener('click', () => {
+  try {
+    window.EFTNative.test();
+    msg('msg-notif', 'Test notification sent ✓ — check your ' +
+      'notification shade. If nothing appears, tap "Open notification ' +
+      'settings" and make sure notifications are allowed.', true);
+  } catch (e) { msg('msg-notif', 'Not available — update the app.', false); }
+});
+$('native-settings').addEventListener('click', () => {
+  try { window.EFTNative.openSettings(); }
+  catch (e) { msg('msg-notif', 'Not available — update the app.', false); }
 });
 
 // ---------- household switch ----------

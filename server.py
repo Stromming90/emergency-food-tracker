@@ -1,8 +1,21 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.12.3)
+Emergency Food Storage Tracker — Web UI server (v2.12.4)
 =====================================================
 Zero-dependency web server (Python stdlib only).
+
+v2.12.4:
+- Android app 2.12.3: native notifications now actually start. The
+   manifest was missing RECEIVE_BOOT_COMPLETED, which JobScheduler
+   requires for persisted jobs — so the background check was never
+   scheduled (in app 2.12.0 the same exception was uncaught, which
+   was the original "app closes on open" crash; 2.12.2 swallowed it,
+   leaving notifications silently dead). Permission added, scheduling
+   failures are now surfaced with a toast, and the app exposes an
+   EFTNative bridge: the Settings -> Notifications tab shows the real
+   status (permission, scheduled job, last background check) and has
+   "Test native notification" and "Open notification settings"
+   buttons. Server code unchanged apart from the Notifications UI.
 
 v2.12.3:
 - Android app 2.12.2: fixes the crash loop reported on a real phone.
@@ -1534,7 +1547,7 @@ class Handler(BaseHTTPRequestHandler):
                     "oidc_enabled": oidc_enabled(),
                     "password_login": password_login_enabled(),
                     "oidc_name": get_config()["oidc"].get("name") or "SSO",
-                    "version": "2.12.3",
+                    "version": "2.12.4",
                     "user": ({**user_public(user),
                               "api_key": user.get("api_key", ""),
                               "visible_households": user_households(user) if not is_global_admin(user)
@@ -2234,7 +2247,7 @@ def main():
     # v2.11: background web-push checker (daemon)
     threading.Thread(target=push_loop, daemon=True).start()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.12.3: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v2.12.4: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 

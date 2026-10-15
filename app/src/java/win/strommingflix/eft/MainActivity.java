@@ -13,12 +13,14 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ComponentName;
 import android.os.Build;
+import android.provider.Settings;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -46,6 +48,15 @@ import android.widget.Toast;
  * downloads the new APK and tapping the system notification opens the
  * installer (installs over the current app; same signing key).
  *
+ * v2.12.3: notifications actually start — the manifest was missing
+ * RECEIVE_BOOT_COMPLETED, which JobScheduler requires for persisted
+ * jobs, so the scheduling silently failed and no background check
+ * ever ran (this was also the root cause of the original crash-loop
+ * report: in 2.12.0 the same exception was uncaught). New EFTNative
+ * JavascriptInterface lets the web UI show the real status
+ * (permission / job / last poll) and offers a test notification and a
+ * shortcut to the system notification settings.
+ *
  * v2.12.2: crash fix — the background poll job (v2.12.0+) read the
  * WebView session cookie from its worker thread, which could throw an
  * Error on some devices and kill the whole app process; because the
@@ -63,7 +74,7 @@ public class MainActivity extends Activity {
     private static final int JOB_ID = 1;
     private static final String PREFS = "eft";
     private static final String KEY_URL = "server_url";
-    private static final String APP_VERSION = "2.12.2";
+    private static final String APP_VERSION = "2.12.3";
     // Custom deep-link scheme: an OIDC flow that somehow ends up in the
     // browser redirects back into the app via win.strommingflix.eft://…
     private static final String DL_SCHEME = "win.strommingflix.eft";
@@ -218,7 +229,10 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         // Token used by the web app to enable the scan buttons.
-        s.setUserAgentString(s.getUserAgentString() + " EFT-Android/2.12.2");
+        s.setUserAgentString(s.getUserAgentString() + " EFT-Android/2.12.3");
+
+        // v2.12.3: bridge for the web UI's native-notification controls
+        web.addJavascriptInterface(new NativeBridge(), "EFTNative");
 
         web.setWebViewClient(new WebViewClient() {
             @Override
@@ -296,6 +310,8 @@ public class MainActivity extends Activity {
             enableNativeNotifications();
         } catch (Throwable t) {
             CrashLog.store(this, t);   // scheduling must never kill startup
+            Toast.makeText(this, "Could not schedule background checks: " + t,
+                    Toast.LENGTH_LONG).show();
         }
     }
 
@@ -342,5 +358,53 @@ public class MainActivity extends Activity {
     public void onBackPressed() {
         if (web != null && web.canGoBack()) web.goBack();
         else super.onBackPressed();
+    }
+
+    /**
+     * v2.12.3: methods exposed to the web page as window.EFTNative.* —
+     * used by Settings -> Notifications to show the real native state,
+     * raise a test notification and jump to the system settings.
+     */
+    private class NativeBridge {
+
+        /** "granted|scheduled|lastPollMillis|lastPollResult|crashed" */
+        @JavascriptInterface
+        public String status() {
+            boolean granted = true;
+            if (Build.VERSION.SDK_INT >= 33) {
+                granted = checkSelfPermission("android.permission.POST_NOTIFICATIONS")
+                        == PackageManager.PERMISSION_GRANTED;
+            }
+            boolean scheduled = false;
+            try {
+                scheduled = getSystemService(JobScheduler.class).getPendingJob(JOB_ID) != null;
+            } catch (Throwable t) { scheduled = false; }
+            SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
+            boolean crashed = CrashLog.get(MainActivity.this) != null;
+            return granted + "|" + scheduled + "|" + p.getLong("last_poll", 0)
+                    + "|" + p.getString("last_poll_result", "never") + "|" + crashed;
+        }
+
+        @JavascriptInterface
+        public void test() {
+            try {
+                PollJobService.notify(MainActivity.this,
+                        "Test notification — native alerts are working ✓ " +
+                        "(background checks run about every 30 minutes).");
+            } catch (Throwable t) {
+                CrashLog.store(MainActivity.this, t);
+            }
+        }
+
+        @JavascriptInterface
+        public void openSettings() {
+            try {
+                Intent i = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
+                startActivity(i);
+            } catch (Throwable t) {
+                CrashLog.store(MainActivity.this, t);
+            }
+        }
     }
 }
