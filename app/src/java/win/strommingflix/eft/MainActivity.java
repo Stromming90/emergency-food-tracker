@@ -5,6 +5,10 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.SharedPreferences;
+import android.app.job.JobInfo;
+import android.app.job.JobScheduler;
+import android.content.ComponentName;
+import android.os.Build;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -28,13 +32,19 @@ import android.widget.Toast;
  * A WebView wrapper around the self-hosted web UI, with camera access so the
  * site's barcode scanning (BarcodeDetector) works. The web app detects the
  * "EFT-Android" user-agent token to show the scan buttons.
+ *
+ * v2.12.0: native notifications — a periodic JobScheduler job
+ * (PollJobService) polls the server for expiring items and raises
+ * system notifications even when the app is closed.
  */
 public class MainActivity extends Activity {
 
     private static final int REQ_CAMERA = 100;
+    private static final int REQ_NOTIF = 102;
+    private static final int JOB_ID = 1;
     private static final String PREFS = "eft";
     private static final String KEY_URL = "server_url";
-    private static final String APP_VERSION = "2.8.0";
+    private static final String APP_VERSION = "2.12.0";
     // Custom deep-link scheme: an OIDC flow that somehow ends up in the
     // browser redirects back into the app via win.strommingflix.eft://…
     private static final String DL_SCHEME = "win.strommingflix.eft";
@@ -163,7 +173,7 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         // Token used by the web app to enable the scan buttons.
-        s.setUserAgentString(s.getUserAgentString() + " EFT-Android/2.8.0");
+        s.setUserAgentString(s.getUserAgentString() + " EFT-Android/2.12.0");
 
         web.setWebViewClient(new WebViewClient() {
             @Override
@@ -204,6 +214,30 @@ public class MainActivity extends Activity {
         web.loadUrl(serverUrl);
         setContentView(web, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        enableNativeNotifications();
+    }
+
+    /**
+     * v2.12.0: native notifications. Ask for the notification permission
+     * (Android 13+) and schedule the periodic background check that polls
+     * /api/push/inbox and raises system notifications. The job is persisted,
+     * so it survives reboots without a boot receiver.
+     */
+    private void enableNativeNotifications() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            String p = "android.permission.POST_NOTIFICATIONS";
+            if (checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{p}, REQ_NOTIF);
+            }
+        }
+        JobScheduler js = getSystemService(JobScheduler.class);
+        JobInfo ji = new JobInfo.Builder(JOB_ID,
+                new ComponentName(this, PollJobService.class))
+                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                .setPeriodic(30 * 60 * 1000L)   // ~every 30 minutes
+                .setPersisted(true)              // survives reboots
+                .build();
+        js.schedule(ji);
     }
 
     @Override

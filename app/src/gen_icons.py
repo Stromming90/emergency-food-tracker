@@ -59,7 +59,8 @@ def write_png(path, size):
     with open(path, "wb") as f:
         f.write(data)
 
-base = "/home/user/eft/app/src/res"
+import os
+base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "res")
 for name, size in (("mipmap-mdpi", 48), ("mipmap-hdpi", 72),
                    ("mipmap-xhdpi", 96), ("mipmap-xxhdpi", 144),
                    ("mipmap-xxxhdpi", 192)):

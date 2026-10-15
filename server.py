@@ -1,8 +1,20 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.11.0)
+Emergency Food Storage Tracker — Web UI server (v2.12.0)
 =====================================================
 Zero-dependency web server (Python stdlib only).
+
+v2.12.0:
+- Native push notifications for the Android APK app itself: the app
+  now runs a periodic background job (about every 30 minutes) that
+  polls GET /api/push/inbox?device=<uuid> with the app's session
+  cookie and raises a real system notification when an item's status
+  tag worsens — even when the app is closed. No third-party apps, no
+  accounts: the device auto-registers on first poll, each successful
+  poll refreshes the login session (sliding expiry), and devices
+  that have not polled in 90 days are pruned. The first poll only
+  establishes the baseline. The browser Web Push system from v2.11.0
+  remains unchanged (for browser/home-screen installs).
 
 v2.11.0:
 - BOTH old notification options removed (the v2.10.1 in-app banner
@@ -136,7 +148,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from http.cookies import SimpleCookie
 
@@ -460,6 +472,16 @@ def current_user(handler):
     cookie = SimpleCookie(handler.headers.get("Cookie", ""))
     token = cookie.get("session").value if cookie.get("session") else None
     return session_user(token) if token else None
+
+
+def touch_session(handler):
+    """v2.12: extend the caller's session (sliding expiry) — the
+    Android app's background poll uses this to stay logged in."""
+    cookie = SimpleCookie(handler.headers.get("Cookie", ""))
+    if cookie.get("session"):
+        s = SESSIONS.get(cookie["session"].value)
+        if s and s["expires"] > now():
+            s["expires"] = now() + SESSION_TTL
 
 
 class AuthError(Exception):
@@ -1475,7 +1497,7 @@ class Handler(BaseHTTPRequestHandler):
                     "oidc_enabled": oidc_enabled(),
                     "password_login": password_login_enabled(),
                     "oidc_name": get_config()["oidc"].get("name") or "SSO",
-                    "version": "2.11.0",
+                    "version": "2.12.0",
                     "user": ({**user_public(user),
                               "api_key": user.get("api_key", ""),
                               "visible_households": user_households(user) if not is_global_admin(user)
@@ -1558,6 +1580,51 @@ class Handler(BaseHTTPRequestHandler):
                 subs = [s for s in get_config().get("push_subs", [])
                         if s.get("user") == user["username"]]
                 self.reply(200, {"endpoints": [s.get("endpoint", "") for s in subs]})
+            elif path == "/api/push/inbox":
+                # v2.12: native Android app poll — alerts for the
+                # households this user can see, since this device's
+                # last poll. The device auto-registers on first poll.
+                user = require_user(self)
+                dev = (qs.get("device") or [""])[0].strip()
+                if not dev or len(dev) > 100:
+                    raise ValueError("Missing device id.")
+                cfg = get_config()
+                devs = cfg.setdefault("push_devices", {})
+                d = devs.get(dev)
+                if d and d.get("user") != user["username"]:
+                    raise ValueError("Device is registered to another user.")
+                if d is None:
+                    d = {"user": user["username"], "levels": {}}
+                    devs[dev] = d
+                d["last_seen"] = date.today().isoformat()
+                hhs = list_households() if is_global_admin(user) \
+                    else user_households(user)
+                prev = d.get("levels") or {}
+                cur, alerts = {}, []
+                for hh in hhs:
+                    for r in inventory_view(hh):
+                        key = f"{hh}:{r['id']}"
+                        level = r.get("level", "ok")
+                        cur[key] = level
+                        old = prev.get(key)
+                        if old and old != level and \
+                                PUSH_RANK.get(level, 0) > PUSH_RANK.get(old, 0):
+                            name = r.get("product", "")
+                            man = r.get("manufacturer", "")
+                            label = f"{name} ({man})" if man else name
+                            alerts.append(
+                                f"{label}: {PUSH_LEVEL_TEXT.get(old, old)} -> "
+                                f"{PUSH_LEVEL_TEXT.get(level, level)}")
+                d["levels"] = cur
+                # prune devices that have not polled in 90 days
+                cutoff = (date.today() - timedelta(days=90)).isoformat()
+                for k in [k for k, v in devs.items()
+                          if str(v.get("last_seen", "")) < cutoff]:
+                    devs.pop(k, None)
+                save_json(CONFIG_FILE, cfg)
+                touch_session(self)   # polling keeps the app session alive
+                self.reply(200, {"alerts": alerts[:20],
+                                 "more": max(0, len(alerts) - 20)})
             elif path == "/api/admin/barcodes":
                 # v2.7: list barcode -> product mappings (v2.9: with size)
                 require_global_admin(self)
@@ -2130,7 +2197,7 @@ def main():
     # v2.11: background web-push checker (daemon)
     threading.Thread(target=push_loop, daemon=True).start()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.11.0: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v2.12.0: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 

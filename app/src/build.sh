@@ -1,63 +1,71 @@
 #!/bin/bash
 # Build the Emergency Food Tracker Android APK without Gradle.
-# Requirements: JDK 17 (in /opt/android/jdk-17*), Android build-tools 34,
-# android.jar (platform 34). Produces /home/user/eft/app/eft-app.apk(.b64).
+#
+# Requirements: JDK 17+, Android build-tools 34 and the android-34
+# platform jar. Paths can be overridden via env vars:
+#   JAVA_HOME, ANDROID_BT (build-tools dir), ANDROID_JAR (platform jar)
+# Defaults fit the dev machine and GitHub Actions runners (which provide
+# ANDROID_SDK_ROOT). Output: app/eft-app.apk(.b64) next to this dir's
+# parent — the b64 file is committed to the repo so /app.apk serves it.
 set -e
-export JAVA_HOME=$(ls -d /opt/android/jdk-17* | head -1)
+
+if [ -z "$JAVA_HOME" ]; then
+  export JAVA_HOME=$(ls -d /opt/android/jdk-17* 2>/dev/null | head -1)
+fi
 export PATH=$JAVA_HOME/bin:$PATH
-BT=$(ls -d /opt/android/bt/*/ | head -1)
-JAR=/opt/android/plat/android-34/android.jar
-SRC=/home/user/eft/app/src
+if [ -z "$ANDROID_BT" ]; then ANDROID_BT=$(ls -d /opt/android/bt/*/ 2>/dev/null | head -1); fi
+if [ -z "$ANDROID_JAR" ]; then ANDROID_JAR=/opt/android/plat/android-34/android.jar; fi
+
+SRC=$(cd "$(dirname "$0")" && pwd)
 OUT=$SRC/build
-rm -rf $OUT && mkdir -p $OUT/classes $OUT/lib
+rm -rf "$OUT" && mkdir -p "$OUT/classes" "$OUT/lib"
 
 echo "[1/7] aapt2 compile resources"
-$BT/aapt2 compile --dir $SRC/res -o $OUT/res.zip
+"$ANDROID_BT/aapt2" compile --dir "$SRC/res" -o "$OUT/res.zip"
 
 echo "[2/7] aapt2 link"
-$BT/aapt2 link -o $OUT/base.apk \
-  -I "$JAR" \
-  --manifest $SRC/AndroidManifest.xml \
+"$ANDROID_BT/aapt2" link -o "$OUT/base.apk" \
+  -I "$ANDROID_JAR" \
+  --manifest "$SRC/AndroidManifest.xml" \
   --min-sdk-version 24 --target-sdk-version 34 \
-  --version-code 31 --version-name 2.8.0 \
-  $OUT/res.zip
+  --version-code 32 --version-name 2.12.0 \
+  "$OUT/res.zip"
 
 echo "[3/7] javac"
-$JAVA_HOME/bin/javac -source 8 -target 8 -nowarn \
-  -classpath "$JAR" \
-  -d $OUT/classes \
-  $(find $SRC/java -name "*.java")
+javac -source 8 -target 8 -nowarn \
+  -classpath "$ANDROID_JAR" \
+  -d "$OUT/classes" \
+  $(find "$SRC/java" -name "*.java")
 
 echo "[4/7] d8 dex"
-$JAVA_HOME/bin/java -cp $BT/lib/d8.jar com.android.tools.r8.D8 \
-  --lib "$JAR" --release --output $OUT/lib \
-  $(find $OUT/classes -name "*.class")
+java -cp "$ANDROID_BT/lib/d8.jar" com.android.tools.r8.D8 \
+  --lib "$ANDROID_JAR" --release --output "$OUT/lib" \
+  $(find "$OUT/classes" -name "*.class")
 
 echo "[5/7] package"
-cp $OUT/base.apk $OUT/app-unsigned.apk
-cd $OUT/lib && zip -qj $OUT/app-unsigned.apk classes.dex && cd /
+cp "$OUT/base.apk" "$OUT/app-unsigned.apk"
+cd "$OUT/lib" && zip -qj "$OUT/app-unsigned.apk" classes.dex && cd "$SRC"
 
 echo "[6/7] zipalign"
-$BT/zipalign -f 4 $OUT/app-unsigned.apk $OUT/app-aligned.apk
+"$ANDROID_BT/zipalign" -f 4 "$OUT/app-unsigned.apk" "$OUT/app-aligned.apk"
 
 echo "[7/7] sign"
-if [ ! -f $SRC/debug.keystore ]; then
-  if [ -f $SRC/debug.keystore.b64 ]; then
+if [ ! -f "$SRC/debug.keystore" ]; then
+  if [ -f "$SRC/debug.keystore.b64" ]; then
     # restore the committed signing key so updates install over the old app
-    base64 -d $SRC/debug.keystore.b64 > $SRC/debug.keystore
+    base64 -d "$SRC/debug.keystore.b64" > "$SRC/debug.keystore"
   else
-    $JAVA_HOME/bin/keytool -genkeypair -keystore $SRC/debug.keystore \
+    keytool -genkeypair -keystore "$SRC/debug.keystore" \
       -storepass android -keypass android -alias eft \
       -keyalg RSA -keysize 2048 -validity 10000 \
       -dname "CN=Emergency Food Tracker,O=Stromming,C=SE"
   fi
 fi
-$BT/apksigner sign --ks $SRC/debug.keystore --ks-pass pass:android \
-  --key-pass pass:android --out $OUT/eft-app.apk $OUT/app-aligned.apk
-$BT/apksigner verify --print-certs $OUT/eft-app.apk | head -3
+"$ANDROID_BT/apksigner" sign --ks "$SRC/debug.keystore" --ks-pass pass:android \
+  --key-pass pass:android --out "$OUT/eft-app.apk" "$OUT/app-aligned.apk"
+"$ANDROID_BT/apksigner" verify --print-certs "$OUT/eft-app.apk" | head -3
 
-mkdir -p /home/user/eft/app
-cp $OUT/eft-app.apk /home/user/eft/app/eft-app.apk
-base64 -w 76 $OUT/eft-app.apk > /home/user/eft/app/eft-app.apk.b64
-ls -la /home/user/eft/app/
+cp "$OUT/eft-app.apk" "$SRC/../eft-app.apk"
+base64 -w 76 "$OUT/eft-app.apk" > "$SRC/../eft-app.apk.b64"
+ls -la "$SRC/.."
 echo BUILD-OK

@@ -6,8 +6,13 @@ minimal WebView wrapper around the web UI, built **without Gradle**:
 - `java/win/strommingflix/eft/MainActivity.java` — WebView activity:
   asks for the server URL on first launch, stores it, keeps cookies,
   grants the WebView camera access (needed for barcode scanning).
+- `java/win/strommingflix/eft/PollJobService.java` — v2.12.0: periodic
+  background job (JobScheduler, ~every 30 min, persisted) that polls
+  `GET /api/push/inbox?device=<uuid>` with the app's session cookie and
+  raises a native system notification when an item worsens — even with
+  the app closed. Each poll refreshes the login session server-side.
 - `AndroidManifest.xml` — package `win.strommingflix.eft`, INTERNET +
-  CAMERA permissions, minSdk 24, versionCode 31 (app v2.8.0).
+  CAMERA permissions, minSdk 24, versionCode 32 (app v2.12.0).
 - `gen_icons.py` — regenerates the launcher icons (`res/mipmap-*`),
   pure Python stdlib, run `python3 gen_icons.py`.
 - `build.sh` — full build: `aapt2 compile/link` → `javac` → `d8` →
