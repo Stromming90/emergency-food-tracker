@@ -48,6 +48,14 @@ import android.widget.Toast;
  * downloads the new APK and tapping the system notification opens the
  * installer (installs over the current app; same signing key).
  *
+ * v2.12.5: ACCESS_NETWORK_STATE added — JobScheduler rejects jobs
+ * with a connectivity constraint without it (SecurityException on
+ * Android 16; the background notification job therefore never
+ * existed on that device). Also: the update dialog's browser buttons
+ * now go through EFTNative.openUrl (ACTION_VIEW outside the WebView)
+ * instead of intent:// anchor clicks, which did nothing on that
+ * device's WebView, and every failure raises a visible toast.
+ *
  * v2.12.4: the in-app update download now bypasses the system
  * DownloadManager entirely (it silently failed on at least one real
  * device). The app downloads /app.apk itself with HttpURLConnection
@@ -83,7 +91,7 @@ public class MainActivity extends Activity {
     private static final int JOB_ID = 1;
     private static final String PREFS = "eft";
     private static final String KEY_URL = "server_url";
-    private static final String APP_VERSION = "2.12.4";
+    private static final String APP_VERSION = "2.12.5";
     // Custom deep-link scheme: an OIDC flow that somehow ends up in the
     // browser redirects back into the app via win.strommingflix.eft://…
     private static final String DL_SCHEME = "win.strommingflix.eft";
@@ -242,7 +250,7 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         // Token used by the web app to enable the scan buttons.
-        s.setUserAgentString(s.getUserAgentString() + " EFT-Android/2.12.4");
+        s.setUserAgentString(s.getUserAgentString() + " EFT-Android/2.12.5");
 
         // v2.12.3: bridge for the web UI's native-notification controls
         web.addJavascriptInterface(new NativeBridge(), "EFTNative");
@@ -517,6 +525,34 @@ public class MainActivity extends Activity {
                 startActivity(i);
             } catch (Throwable t) {
                 CrashLog.store(MainActivity.this, t);
+                try {
+                    // fallback: the app's details page still has
+                    // the notification toggle on every Android version
+                    startActivity(new Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.fromParts("package", getPackageName(), null)));
+                } catch (Throwable ignored) { }
+            }
+        }
+
+        /**
+         * v2.12.5: open a URL outside the WebView (real browser). The
+         * intent:// anchor-click trick did nothing on the affected
+         * device; going through native code makes failures visible.
+         */
+        @JavascriptInterface
+        public void openUrl(String url) {
+            try {
+                Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+                Toast.makeText(MainActivity.this,
+                        "Opened in browser", Toast.LENGTH_SHORT).show();
+            } catch (Throwable t) {
+                CrashLog.store(MainActivity.this, t);
+                Toast.makeText(MainActivity.this,
+                        "Could not open the browser: " + t,
+                        Toast.LENGTH_LONG).show();
             }
         }
     }

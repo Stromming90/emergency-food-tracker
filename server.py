@@ -1,8 +1,20 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.12.5)
+Emergency Food Storage Tracker — Web UI server (v2.12.6)
 =====================================================
 Zero-dependency web server (Python stdlib only).
+
+v2.12.6:
+- Android app 2.12.5: the last missing permission. JobScheduler
+   requires ACCESS_NETWORK_STATE for jobs with a connectivity
+   constraint — without it the schedule throws SecurityException
+   (the reported Android 16 crash) and no background notification
+   job ever exists. Added to the manifest; the job now schedules.
+   The update dialog's browser buttons also changed: the intent://
+   anchor-click trick did nothing in that device's WebView, so the
+   page now calls EFTNative.openUrl (native ACTION_VIEW outside the
+   WebView, with a visible toast on failure); the intent:// path
+   remains only as a fallback for older apps.
 
 v2.12.5:
 - Android app 2.12.4: the in-app update download actually works.
@@ -1560,7 +1572,7 @@ class Handler(BaseHTTPRequestHandler):
                     "oidc_enabled": oidc_enabled(),
                     "password_login": password_login_enabled(),
                     "oidc_name": get_config()["oidc"].get("name") or "SSO",
-                    "version": "2.12.5",
+                    "version": "2.12.6",
                     "user": ({**user_public(user),
                               "api_key": user.get("api_key", ""),
                               "visible_households": user_households(user) if not is_global_admin(user)
@@ -2260,7 +2272,7 @@ def main():
     # v2.11: background web-push checker (daemon)
     threading.Thread(target=push_loop, daemon=True).start()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.12.5: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v2.12.6: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 

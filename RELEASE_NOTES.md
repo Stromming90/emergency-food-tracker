@@ -1,3 +1,36 @@
+# v2.12.6 — Fix: background job still not scheduled (app 2.12.5)
+
+## What was wrong (from the crash report dialog)
+The Android 16 crash report showed:
+`SecurityException: android.permission.ACCESS_NETWORK_STATE required
+for jobs with a connectivity constraint`. JobScheduler silently
+requires this permission for the network constraint the notification
+job uses — the manifest did not declare it, so **no background job was
+ever scheduled** on that device (this time it was caught and recorded
+instead of crashing the app — that is why the app kept working).
+Also, the update dialog's Chrome/browser buttons did nothing: the
+`intent://` anchor-click trick is not honoured by that WebView.
+
+## What is fixed (app 2.12.5)
+- `ACCESS_NETWORK_STATE` added to the manifest — the background
+  notification job now schedules for real. All permission
+  requirements of the job are now declared
+  (RECEIVE_BOOT_COMPLETED + ACCESS_NETWORK_STATE).
+- Browser buttons in the update dialog now call the app's native
+  bridge (`EFTNative.openUrl`) — a real ACTION_VIEW outside the
+  WebView — and every failure shows a visible toast. The old
+  intent:// path stays only as a fallback for older app versions.
+- "Open notification settings" falls back to the app details page if
+  the direct notification settings screen is unavailable.
+
+## Update
+`docker compose pull && docker compose up -d`, then in the app:
+Settings ⚙️ → About → ⬇ Download → **⬇ Download in app** (the app
+downloads and opens the installer itself), or **🌐 Download in Chrome**
+/ **Download in your browser** — these now open a real browser. After
+installing, check Settings ⚙️ → Notifications: it should say
+"Permission: allowed ✓ · Background job: scheduled ✓".
+
 # v2.12.5 — Fix: in-app update download did nothing (app 2.12.4)
 
 ## What was wrong

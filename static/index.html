@@ -1186,6 +1186,14 @@ const FIRST_IN_APP_UPDATE = '2.12.4';
 // Real <a> click — more reliable than location.href for custom schemes
 // in older WebViews.
 function openInBrowser(pkg) {
+  const url = location.origin + '/app.apk';
+  // Preferred: the app's native bridge (v2.12.5+) opens a real browser
+  // with ACTION_VIEW and shows a toast on failure. The intent:// anchor
+  // trick did nothing on some WebViews (reported on Android 16).
+  if (window.EFTNative && typeof window.EFTNative.openUrl === 'function') {
+    try { window.EFTNative.openUrl(url); return; } catch (e) { /* fall through */ }
+  }
+  // Fallback for old apps: the intent:// anchor click.
   const proto = location.protocol === 'https:' ? 'https' : 'http';
   const intent =
       `intent://${location.host}/app.apk#Intent;scheme=${proto};` +
