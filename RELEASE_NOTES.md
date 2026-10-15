@@ -1,38 +1,53 @@
-# v2.8.0 — Barcode defaults + scan straight into inventory
+# v2.9.0 — Barcode country lists, per-column filters, storage guide
 
-## Swedish emergency-food barcode defaults
-The tracker now ships with a bundled barcode reference list:
-`data/barcode-defaults.json` — **1 747 Swedish grocery products** (pasta,
-rice, canned fish, oils, honey, crispbread, coffee …) collected from Open
-Food Facts and cleaned up (brand spellings, name casing, dedup).
+## Barcodes
+- **Country lists, opt-in**: the barcode reference list now starts empty.
+  A global admin imports the bundled **Sweden** list (1 747 scanned
+  grocery products) in **Settings → Barcodes** — "Use the below dropdown
+  menu to add a pre-existing list of scanned barcodes, sorted by country
+  of purchase" — with a confirmation before anything is added. Each list
+  is imported once; products that already exist are not duplicated, and
+  mappings you delete afterwards stay deleted.
+- **Barcodes tab reworked**: the "Map barcode" form is gone. Removing or
+  adding mappings is now behind an **Edit button** (global admin) with
+  buffered changes and a **Confirm changes** button. The list shows
+  barcode, product, brand and size in separate, filterable columns.
+- Sizes that were baked into product names (e.g. "Fusilli Fullkorn
+  500g") are cleaned up and live only in the size field.
 
-On first start they are seeded automatically:
-- products missing from your global product list are added (with type,
-  category and size), existing products are never touched;
-- their barcodes are mapped, so scanning any of them resolves instantly.
+## Household
+- **Record a purchase**: new **Category** filter between Type and
+  Product; the product dropdown now also shows the size.
+- The **Scan** button moved from the Inventory section to *Record a
+  purchase* (it still adds scanned items straight into the inventory,
+  with quantity, separate from the product-list scan).
+- **Inventory list**: a text filter per column — filter on several
+  things at once.
 
-Seeding runs once; mappings you delete afterwards stay deleted.
+## Products
+- **Add a product** has a **Barcode** field, and its own **Scan**
+  button (moved here from the top bar). Scanning a barcode that isn't on
+  the list pre-fills the form with the barcode and prompts you to
+  continue adding the information.
+- **Size** is now free text and accepts "/", e.g. **"500/350 g"**.
+- **Product list**: a text filter per column.
 
-## Scan items straight into the inventory (Android app)
-The Household → **Inventory** section has its own **📷 Scan** button. It
-opens a dedicated scanner that:
-- resolves the scanned barcode to a product,
-- asks for **how many** you're adding (quantity) and the best-before
-  date (suggested from the product type's shelf life) — so you don't need
-  to scan every single item,
-- adds them to the inventory immediately, and offers **Scan another**
-  for rapid stock-taking.
+## Information
+- New **storage & shelf life** table for the 30 most common emergency
+  foods — consistent **months** throughout, plus notes on which foods
+  (white rice, honey, sugar, canned goods …) stay good long beyond
+  their "best before" date.
 
-This is completely separate from the top-bar 📷 scan, which pre-fills the
-*Record a purchase* form and maps unknown barcodes (global admin) — that
-workflow is unchanged.
+## Mobile app
+- The "Get for Android" phone-app button is removed from the app UI —
+  the app is a thin WebView wrapper, so every update arrives with the
+  server and no APK reinstall is needed. `app-version.txt` still tracks
+  the version (now 2.9.0) for the versioned download URL.
 
-## Phone app
-App version bumps to **2.8.0** (versionCode 31) in the source. The APK is
-a thin WebView wrapper: the new inventory scan and the barcode defaults
-arrive through the web UI the moment the server (Docker image) is updated
-— **no APK reinstall is needed**. The downloadable APK remains the
-unchanged 2.7.3 binary until the next wrapper rebuild
-(`app-version.txt` still reports it honestly).
+## Upgrade notes
+Existing v2.8 instances keep their already-seeded barcode mappings and
+products (config/data are untouched). To start from a clean barcode
+list, delete the mappings in the Barcodes tab's edit mode; to (re-)add
+the Sweden list, use Settings → Barcodes.
 
-Web app version: 2.8.0.
+Web app version: 2.9.0.

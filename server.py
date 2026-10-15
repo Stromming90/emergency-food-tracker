@@ -1,8 +1,19 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.8.0)
+Emergency Food Storage Tracker — Web UI server (v2.9.0)
 =====================================================
 Zero-dependency web server (Python stdlib only).
+
+v2.9:
+- Barcode reference lists are now opt-in per country: nothing is seeded
+  at startup any more. A global admin imports a bundled country list
+  (currently: Sweden) in Settings - Barcodes. Imports run once per
+  country and are additive; admin deletions stick.
+- New endpoints: GET /api/admin/barcode-countries,
+  POST /api/admin/barcodes/import
+- /api/products accepts an optional barcode (6-14 digits) and maps it
+- Size is free text and may contain "/" (e.g. "500/350 g")
+- /api/admin/barcodes now also reports the product size
 
 v2.8:
 - Bundled Swedish emergency-food barcode defaults
@@ -77,7 +88,6 @@ APP_APK_BYTES = None                      # decoded once on first request
 # to server.py (image path in Docker), NOT inside DATA_DIR, so a mounted
 # /data volume can never shadow it.
 BARCODE_DEFAULTS_FILE = os.path.join(APP_DIR, "data", "barcode-defaults.json")
-BARCODE_DEFAULTS_SEED = "v2.8"             # bump to re-seed after data updates
 USERS_FILE = os.path.join(CONFIG_DIR, "users.json")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 PRODUCTS_CSV = os.path.join(DATA_DIR, "products.csv")   # global product list
@@ -164,7 +174,8 @@ def slugify(s):
 
 
 def valid_name(s):
-    return bool(re.fullmatch(r"[\w\s.,'’\-()åäöÅÄÖéèàü0-9]*", s or "", re.UNICODE))
+    # v2.9: "/" allowed in the size field (e.g. "500/350 g")
+    return bool(re.fullmatch(r"[\w\s.,'’\-()/åäöÅÄÖéèàü0-9]*", s or "", re.UNICODE))
 
 
 def valid_label(s):
@@ -219,6 +230,7 @@ def get_config():
     auth.setdefault("sso_login", True)        # v2.5: SSO login toggle
     auth.setdefault("password_login", True)   # v2.5: password login toggle
     cfg.setdefault("barcodes", {})            # v2.7: barcode -> product mappings
+    cfg.setdefault("barcode_imports", {})    # v2.9: imported country lists
     save_json(CONFIG_FILE, cfg)
     return cfg
 
@@ -523,32 +535,55 @@ def ensure_global_products():
     write_csv(PRODUCTS_CSV, PRODUCTS_HEADER, merged)
 
 
-def seed_barcode_defaults():
-    """v2.8: seed the bundled Swedish emergency-food barcode defaults.
-
-    On first start (or when BARCODE_DEFAULTS_SEED changes): add any missing
-    products from data/barcode-defaults.json to the global product list and
-    map their barcodes. Never overwrites existing products or mappings, and
-    runs only once per seed version — mappings deleted by an admin stay
-    deleted.
-    """
-    cfg = get_config()
-    if cfg.get("barcode_defaults_seed") == BARCODE_DEFAULTS_SEED:
-        return
+def barcode_countries():
+    """v2.9: bundled country barcode reference lists (data/barcode-defaults.json)."""
     try:
         with open(BARCODE_DEFAULTS_FILE, encoding="utf-8") as f:
             defaults = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        defaults = []
-    if not isinstance(defaults, list):
-        defaults = []
+        defaults = {}
+    if not isinstance(defaults, dict):
+        defaults = {}
+    imported = get_config().setdefault("barcode_imports", {})
+    out = []
+    for code, spec in defaults.items():
+        items = spec.get("items", []) if isinstance(spec, dict) else []
+        out.append({"country": code,
+                    "label": (spec.get("label", code)
+                              if isinstance(spec, dict) else code),
+                    "count": len(items),
+                    "imported": bool(imported.get(code))})
+    return out
+
+
+def import_barcode_country(country):
+    """v2.9: import a bundled country barcode list on demand.
+
+    Runs once per country (tracked in config "barcode_imports"); adds any
+    missing products to the global product list and maps their barcodes.
+    Never overwrites existing products or mappings, and admin deletions
+    stick - the import is not re-run for that country.
+    """
+    country = str(country or "").strip().lower()
+    try:
+        with open(BARCODE_DEFAULTS_FILE, encoding="utf-8") as f:
+            defaults = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        defaults = {}
+    spec = defaults.get(country) if isinstance(defaults, dict) else None
+    if not isinstance(spec, dict) or not isinstance(spec.get("items"), list):
+        raise ValueError("Unknown country barcode list.")
+    cfg = get_config()
+    imported = cfg.setdefault("barcode_imports", {})
+    if imported.get(country):
+        return {"country": country, "added": 0, "mapped": 0, "already": True}
     type_ids = {t["id"] for t in get_food_types()}
     products = read_csv(PRODUCTS_CSV)
     seen = {(p.get("name", "").lower(), p.get("manufacturer", "").lower())
             for p in products}
     barcodes = cfg.setdefault("barcodes", {})
     added = mapped = 0
-    for d in defaults:
+    for d in spec["items"]:
         name = str(d.get("name", "")).strip()
         code = str(d.get("barcode", "")).strip()
         manufacturer = str(d.get("manufacturer", "")).strip()
@@ -572,11 +607,10 @@ def seed_barcode_defaults():
             mapped += 1
     if added:
         write_csv(PRODUCTS_CSV, PRODUCTS_HEADER, products)
-    cfg["barcode_defaults_seed"] = BARCODE_DEFAULTS_SEED
+    imported[country] = True
     save_json(CONFIG_FILE, cfg)
-    if added or mapped:
-        print(f"v2.8 barcode defaults seeded: {added} product(s) added, "
-              f"{mapped} barcode(s) mapped")
+    return {"country": country, "added": added, "mapped": mapped,
+            "already": False}
 
 
 # ======================= model =======================
@@ -594,7 +628,7 @@ def alert_level(best):
     return "ok"
 
 
-def add_product(name, manufacturer, ftype, category, size):
+def add_product(name, manufacturer, ftype, category, size, barcode=None):
     name = name.strip()
     manufacturer = (manufacturer or "").strip()
     ftype = (ftype or "").strip()
@@ -617,6 +651,14 @@ def add_product(name, manufacturer, ftype, category, size):
                      "added_date": today().isoformat()})
     products.sort(key=lambda p: (p["name"].lower(), p.get("manufacturer", "").lower()))
     write_csv(PRODUCTS_CSV, PRODUCTS_HEADER, products)
+    if barcode:
+        code = str(barcode).strip()
+        if not re.fullmatch(r"[0-9]{6,14}", code):
+            raise ValueError("Barcode must be 6-14 digits.")
+        cfg = get_config()
+        cfg.setdefault("barcodes", {})[code] = {
+            "name": name, "manufacturer": manufacturer}
+        save_json(CONFIG_FILE, cfg)
 
 
 def update_product(old_name, old_manufacturer, name, manufacturer, ftype, category, size):
@@ -961,7 +1003,7 @@ class Handler(BaseHTTPRequestHandler):
                     "oidc_enabled": oidc_enabled(),
                     "password_login": password_login_enabled(),
                     "oidc_name": get_config()["oidc"].get("name") or "SSO",
-                    "version": "2.8.0",
+                    "version": "2.9.0",
                     "user": ({**user_public(user),
                               "api_key": user.get("api_key", ""),
                               "visible_households": user_households(user) if not is_global_admin(user)
@@ -1030,14 +1072,25 @@ class Handler(BaseHTTPRequestHandler):
                                  "auth": cfg.get("auth", {}),
                                  "types": get_food_types(),
                                  "default_types": DEFAULT_FOOD_TYPES})
+            elif path == "/api/admin/barcode-countries":
+                # v2.9: bundled country barcode lists + import status
+                require_global_admin(self)
+                self.reply(200, {"countries": barcode_countries()})
             elif path == "/api/admin/barcodes":
-                # v2.7: list barcode -> product mappings
+                # v2.7: list barcode -> product mappings (v2.9: with size)
                 require_global_admin(self)
                 bc = get_config().get("barcodes", {})
-                self.reply(200, {"barcodes": [
-                    {"barcode": code, "name": v.get("name", ""),
-                     "manufacturer": v.get("manufacturer", "")}
-                    for code, v in bc.items()]})
+                prods = {(p.get("name", "").lower(),
+                          p.get("manufacturer", "").lower()): p
+                         for p in read_csv(PRODUCTS_CSV)}
+                out = []
+                for code, v in bc.items():
+                    p = prods.get((v.get("name", "").lower(),
+                                   v.get("manufacturer", "").lower()), {})
+                    out.append({"barcode": code, "name": v.get("name", ""),
+                                "manufacturer": v.get("manufacturer", ""),
+                                "size": p.get("size", "")})
+                self.reply(200, {"barcodes": out})
             # ---------- homepage widget ----------
             elif path == "/api/widget":
                 key = qs.get("key", [""])[0]
@@ -1151,7 +1204,7 @@ class Handler(BaseHTTPRequestHandler):
                 require_any_household_admin(self)
                 add_product(body.get("name", ""), body.get("manufacturer", ""),
                             body.get("type", ""), body.get("category", ""),
-                            body.get("size", ""))
+                            body.get("size", ""), body.get("barcode", ""))
                 self.reply(201, {"ok": True})
             elif path == "/api/buy":
                 user = require_user(self)
@@ -1248,6 +1301,11 @@ class Handler(BaseHTTPRequestHandler):
                     "name": prod["name"], "manufacturer": prod.get("manufacturer", "")}
                 save_json(CONFIG_FILE, cfg)
                 self.reply(200, {"ok": True, "barcode": code, "name": prod["name"]})
+            elif path == "/api/admin/barcodes/import":
+                # v2.9: import a bundled country barcode list on demand
+                require_global_admin(self)
+                res = import_barcode_country(body.get("country", ""))
+                self.reply(200, {"ok": True, **res})
             elif path == "/api/admin/oidc":
                 require_global_admin(self)
                 cfg = get_config()
@@ -1520,12 +1578,10 @@ def main():
     ensure_global_products()
     if not os.path.exists(PRODUCTS_CSV):
         write_csv(PRODUCTS_CSV, PRODUCTS_HEADER, [])
-    # v2.8: seed the bundled Swedish emergency-food barcode defaults
-    seed_barcode_defaults()
     get_users()   # normalizes roles + generates per-user API keys
     get_config()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.8.0: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v2.9.0: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 
