@@ -79,7 +79,7 @@ public class PollJobService extends JobService {
             // v2.12.2: main-thread cookie read (onStartJob has a Looper).
             cookie = CookieManager.getInstance().getCookie(base);
         } catch (Throwable t) {
-            CrashLog.store(this, t);   // record, never crash the process
+            CrashLog.store(ctx, t);   // record, never crash the process
             return false;
         }
         if (cookie == null || cookie.isEmpty()) return false; // not logged in
@@ -170,10 +170,10 @@ public class PollJobService extends JobService {
                 body.append(alerts.getString(i));
             }
             if (more > 0) body.append("\n… and ").append(more).append(" more");
-            notify(this, body.toString());
+            notify(ctx, body.toString());
             record(ctx, "ok (" + alerts.length() + " alert(s))");
         } catch (Throwable t) {
-            CrashLog.store(this, t);
+            CrashLog.store(ctx, t);
             record(ctx, "error: " + t);
         } finally {
             if (c != null) {
