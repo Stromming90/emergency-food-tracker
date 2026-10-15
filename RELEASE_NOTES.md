@@ -1,3 +1,33 @@
+# v2.12.5 — Fix: in-app update download did nothing (app 2.12.4)
+
+## What was wrong
+Tapping "Download update" inside the app did nothing. The app handed
+the download to the system DownloadManager — which silently failed on
+at least one real device (Android 16). The phone therefore stayed on
+app 2.12.2, whose recorded crash report (shown in the crash dialog)
+confirmed the missing RECEIVE_BOOT_COMPLETED permission — already fixed
+in 2.12.3, but impossible to install because the download itself was
+broken.
+
+## What is fixed (app 2.12.4)
+- **The app downloads the update itself**: plain HTTP into its own
+  storage, then straight into the Android package installer via a
+  bundled content provider — no DownloadManager involved. The system
+  asks once for permission to let the app install updates; approve it.
+- The outcome is **visible**: a toast while downloading, a toast with
+  the result, and "Last update download: ok (N bytes)" in Settings ⚙️ →
+  Notifications. Failures also land in the crash report dialog.
+- The update dialog now opens for **every** app version: "⬇ Download in
+  app" (2.12.4+), plus **Download in Chrome** / **in your browser**
+  fallback buttons and the manual address — so there is always a
+  working path, and nothing can fail silently.
+
+## Update
+`docker compose pull && docker compose up -d`, then in the app:
+Settings ⚙️ → About → ⬇ Download → **Download in Chrome** (this one
+download goes through the browser), tap the downloaded APK, install.
+From 2.12.4 on, all future updates install fully in-app.
+
 # v2.12.4 — Fix: native app notifications never started (app 2.12.3)
 
 ## What was wrong

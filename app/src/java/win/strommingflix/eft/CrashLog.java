@@ -37,7 +37,7 @@ public final class CrashLog {
         try {
             StringWriter sw = new StringWriter();
             sw.write(new Date().toString());
-            sw.write(" (app v2.12.2, Android ");
+            sw.write(" (app v2.12.4, Android ");
             sw.write(android.os.Build.VERSION.RELEASE);
             sw.write(")\n");
             t.printStackTrace(new PrintWriter(sw));

@@ -1,8 +1,21 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.12.4)
+Emergency Food Storage Tracker — Web UI server (v2.12.5)
 =====================================================
 Zero-dependency web server (Python stdlib only).
+
+v2.12.5:
+- Android app 2.12.4: the in-app update download actually works.
+   The system DownloadManager path silently failed on a real device
+   (Android 16): tapping Download did nothing. The app now downloads
+   /app.apk itself with HttpURLConnection into its own storage and
+   hands the file straight to the package installer through a tiny
+   bundled content provider (APKProvider), with REQUEST_INSTALL_PACKAGES
+   declared so the system can prompt for it. The outcome (bytes or
+   error) is toasted, recorded and shown in Settings -> Notifications.
+   The web update dialog now appears for ALL app versions, offering
+   "Download in app" (2.12.4+) plus Chrome / browser fallback buttons
+   that cannot fail silently. Server code unchanged (version bump).
 
 v2.12.4:
 - Android app 2.12.3: native notifications now actually start. The
@@ -1547,7 +1560,7 @@ class Handler(BaseHTTPRequestHandler):
                     "oidc_enabled": oidc_enabled(),
                     "password_login": password_login_enabled(),
                     "oidc_name": get_config()["oidc"].get("name") or "SSO",
-                    "version": "2.12.4",
+                    "version": "2.12.5",
                     "user": ({**user_public(user),
                               "api_key": user.get("api_key", ""),
                               "visible_households": user_households(user) if not is_global_admin(user)
@@ -2247,7 +2260,7 @@ def main():
     # v2.11: background web-push checker (daemon)
     threading.Thread(target=push_loop, daemon=True).start()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.12.4: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v2.12.5: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 

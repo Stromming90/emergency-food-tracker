@@ -643,7 +643,7 @@
   </div>
 </div>
 
-<!-- app update modal (old app versions, v2.12.2) -->
+<!-- app update modal (in-app download + browser fallback, v2.12.5) -->
 <div class="modal-bg" id="upd-modal" hidden>
   <div class="modal" style="max-width:440px">
     <div class="row" style="justify-content:space-between">
@@ -651,11 +651,10 @@
       <button class="del" id="upd-close" title="Close">✕</button>
     </div>
     <p class="muted" id="upd-versions" style="margin:2px 0 8px"></p>
-    <p style="margin:0 0 6px">This app version can't download the update
-    by itself. Open the download page in your phone's browser:</p>
     <div class="row" style="flex-direction:column;align-items:stretch;gap:6px">
-      <button id="upd-chrome">🌐 Open in Chrome</button>
-      <button id="upd-browser" class="ghost">Open in your browser</button>
+      <button id="upd-native" hidden>⬇ Download in app (recommended)</button>
+      <button id="upd-chrome">🌐 Download in Chrome</button>
+      <button id="upd-browser" class="ghost">Download in your browser</button>
     </div>
     <p class="muted" style="margin:10px 0 2px">If a browser did not open,
     do it manually: open your browser app, go to the address below, then
@@ -1177,7 +1176,10 @@ function cmpVer(a, b) {           // returns -1 / 0 / 1
 // The first app version that can download updates in-app (WebView
 // DownloadListener → DownloadManager). Older apps are bounced through
 // the browser via an intent:// URL instead.
-const FIRST_IN_APP_UPDATE = '2.12.1';
+// The first app version that can download and install updates fully
+// in-app (self-download + APKProvider installer). Older apps get the
+// browser buttons in the update dialog.
+const FIRST_IN_APP_UPDATE = '2.12.4';
 
 // intent:// link that asks Android to open the APK URL in a browser.
 // `pkg` optionally targets a specific browser (e.g. com.android.chrome).
@@ -1198,21 +1200,26 @@ function openInBrowser(pkg) {
 }
 
 function openUpdateModal() {
-  // Old app (< FIRST_IN_APP_UPDATE) without a download handler: guide
-  // the user to the browser. Show the address as a manual fallback.
+  // In-app: guided dialog. The native button appears only when the app
+  // exposes EFTNative.downloadUpdate (app 2.12.4+); every app version
+  // gets the browser buttons as a fallback that cannot fail silently.
   $('upd-versions').textContent =
     `Installed: v${APP_VER || '?'} · Available: v${SERVER_APP_VER || '?'}`;
   $('upd-addr').textContent = location.origin + '/';
+  const hasNative = window.EFTNative &&
+      typeof window.EFTNative.downloadUpdate === 'function';
+  $('upd-native').hidden = !hasNative;
   $('upd-modal').hidden = false;
 }
 
 function downloadAppApk() {
-  if (IN_APP && APP_VER && cmpVer(APP_VER, FIRST_IN_APP_UPDATE) < 0) {
-    // Old app without a download handler: guided browser path.
+  if (IN_APP) {
+    // Any app version: the guided dialog (in-app on 2.12.4+, browser
+    // buttons otherwise — the system download path proved unreliable).
     openUpdateModal();
     return;
   }
-  location.href = '/app.apk';   // browser: download; new app: DownloadManager
+  location.href = '/app.apk';   // plain browser: direct download
 }
 
 let SERVER_APP_VER = null;      // APK version bundled on the server
@@ -1258,14 +1265,10 @@ function refreshAboutTab() {
     : ' · App: not installed';
   $('about-versions').textContent = info + appBit;
   const btn = $('app-download');
-  if (IN_APP && APP_VER && cmpVer(APP_VER, FIRST_IN_APP_UPDATE) >= 0) {
-    $('about-app-text').textContent = 'Download the latest version of the ' +
-      'app from this server. The download is handled by the system ' +
-      'download manager; tap the notification when it completes to install.';
-  } else if (IN_APP && APP_VER) {
-    $('about-app-text').textContent = 'Download the latest version of the ' +
-      'app. Your current app version cannot download on its own — the ' +
-      'update opens through your phone\'s browser.';
+  if (IN_APP) {
+    $('about-app-text').textContent = 'Download the update: the app ' +
+      'downloads it itself and opens the installer (app 2.12.4+), or ' +
+      'use the browser buttons in the dialog as a fallback.';
   } else {
     $('about-app-text').textContent = 'A tiny app that wraps this website ' +
       'with native notifications and camera barcode scanning. Download it, ' +
@@ -1279,6 +1282,12 @@ function refreshAboutTab() {
 $('app-download').addEventListener('click', downloadAppApk);
 $('app-banner-dl').addEventListener('click', downloadAppApk);
 $('upd-close').addEventListener('click', () => $('upd-modal').hidden = true);
+$('upd-native').addEventListener('click', () => {
+  $('upd-modal').hidden = true;
+  try {
+    window.EFTNative.downloadUpdate();   // app downloads + opens installer
+  } catch (e) { openUpdateModal(); }
+});
 $('upd-chrome').addEventListener('click', () => openInBrowser('com.android.chrome'));
 $('upd-browser').addEventListener('click', () => openInBrowser(null));
 $('app-banner-x').addEventListener('click', () => {
@@ -2005,6 +2014,8 @@ async function refreshPushState() {
           'sets the baseline silently).';
         if (a[4] === 'true') txt += ' ⚠ The app recorded a crash — open ' +
           'the app home screen for the report dialog.';
+        if (a[5] && a[5] !== 'none')
+          txt += ` Last update download: ${esc(a[5])}.`;
       } catch (e) { /* bridge not ready */ }
       st.textContent = txt;
     } else {

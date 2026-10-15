@@ -48,6 +48,15 @@ import android.widget.Toast;
  * downloads the new APK and tapping the system notification opens the
  * installer (installs over the current app; same signing key).
  *
+ * v2.12.4: the in-app update download now bypasses the system
+ * DownloadManager entirely (it silently failed on at least one real
+ * device). The app downloads /app.apk itself with HttpURLConnection
+ * into its own storage and hands the file straight to the package
+ * installer through a tiny content provider (APKProvider) — the
+ * result is recorded, toasted and reported through the EFTNative
+ * bridge, so failures are visible instead of silent. The web UI also
+ * always offers the browser-download fallback inside the app.
+ *
  * v2.12.3: notifications actually start — the manifest was missing
  * RECEIVE_BOOT_COMPLETED, which JobScheduler requires for persisted
  * jobs, so the scheduling silently failed and no background check
@@ -74,7 +83,7 @@ public class MainActivity extends Activity {
     private static final int JOB_ID = 1;
     private static final String PREFS = "eft";
     private static final String KEY_URL = "server_url";
-    private static final String APP_VERSION = "2.12.3";
+    private static final String APP_VERSION = "2.12.4";
     // Custom deep-link scheme: an OIDC flow that somehow ends up in the
     // browser redirects back into the app via win.strommingflix.eft://…
     private static final String DL_SCHEME = "win.strommingflix.eft";
@@ -82,6 +91,10 @@ public class MainActivity extends Activity {
     private WebView web;
     private PermissionRequest pendingPerm;
     private String serverUrl;
+    /** Session cookie, captured on the main thread for use by the
+     *  bridge/background threads (CookieManager is not thread-safe to
+     *  call from workers — that bug crashed the app in 2.12.0/2.12.1). */
+    private static volatile String sessionCookie = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -229,12 +242,16 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         // Token used by the web app to enable the scan buttons.
-        s.setUserAgentString(s.getUserAgentString() + " EFT-Android/2.12.3");
+        s.setUserAgentString(s.getUserAgentString() + " EFT-Android/2.12.4");
 
         // v2.12.3: bridge for the web UI's native-notification controls
         web.addJavascriptInterface(new NativeBridge(), "EFTNative");
 
         web.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                captureCookie();
+            }
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
                 Uri uri = req.getUrl();
@@ -304,6 +321,7 @@ public class MainActivity extends Activity {
 
         CookieManager.getInstance().setAcceptCookie(true);
         web.loadUrl(serverUrl);
+        captureCookie();
         setContentView(web, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         try {
@@ -313,6 +331,91 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "Could not schedule background checks: " + t,
                     Toast.LENGTH_LONG).show();
         }
+    }
+
+    /** Refresh the cached session cookie (main thread only). */
+    private void captureCookie() {
+        try {
+            if (serverUrl != null)
+                sessionCookie = CookieManager.getInstance().getCookie(serverUrl);
+        } catch (Throwable ignored) { }
+    }
+
+    /**
+     * v2.12.4: download the update APK ourselves (the system
+     * DownloadManager silently failed on a real device) and open the
+     * package installer on it. Runs on a worker thread; toasts and the
+     * installer are posted to the main thread. The outcome is stored in
+     * the prefs ("last_update_dl") and shown by the web UI.
+     */
+    private void downloadUpdateApk() {
+        final String base = serverUrl, cookie = sessionCookie;
+        final android.os.Handler ui =
+                new android.os.Handler(android.os.Looper.getMainLooper());
+        ui.post(() -> Toast.makeText(this,
+                "Downloading update…", Toast.LENGTH_SHORT).show());
+        new Thread(() -> {
+            String result;
+            try {
+                java.io.File dir = getExternalFilesDir("update");
+                if (dir == null) dir = getFilesDir();
+                //noinspection ResultOfMethodCallIgnored
+                dir.mkdirs();
+                final java.io.File out = new java.io.File(dir, "eft-update.apk");
+                java.net.HttpURLConnection c = (java.net.HttpURLConnection)
+                        new java.net.URL(base + "/app.apk").openConnection();
+                if (cookie != null && !cookie.isEmpty())
+                    c.setRequestProperty("Cookie", cookie);
+                c.setConnectTimeout(15000);
+                c.setReadTimeout(60000);
+                int code = c.getResponseCode();
+                if (code != 200) {
+                    result = "HTTP " + code;
+                } else {
+                    java.io.InputStream in = c.getInputStream();
+                    java.io.FileOutputStream fos = new java.io.FileOutputStream(out);
+                    try {
+                        byte[] buf = new byte[16384];
+                        int n;
+                        while ((n = in.read(buf)) > 0) fos.write(buf, 0, n);
+                    } finally {
+                        try { in.close(); } catch (Throwable ignored) { }
+                        try { fos.close(); } catch (Throwable ignored) { }
+                    }
+                    result = "ok (" + out.length() + " bytes)";
+                }
+                c.disconnect();
+            } catch (Throwable t) {
+                CrashLog.store(this, t);
+                result = "error: " + t;
+            }
+            final String r = result;
+            final boolean ok = r.startsWith("ok");
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .putString("last_update_dl", r).apply();
+            ui.post(() -> {
+                Toast.makeText(this, ok
+                        ? "Update downloaded — opening the installer…"
+                        : "Update download failed: " + r,
+                        Toast.LENGTH_LONG).show();
+                if (!ok) return;
+                try {
+                    android.content.Intent it = new android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse(
+                                    "content://" + APKProvider.AUTHORITY + "/update.apk"));
+                    it.setDataAndType(it.getData(),
+                            "application/vnd.android.package-archive");
+                    it.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    startActivity(it);
+                } catch (Throwable t2) {
+                    CrashLog.store(this, t2);
+                    Toast.makeText(this,
+                            "Could not open the installer: " + t2,
+                            Toast.LENGTH_LONG).show();
+                }
+            });
+        }).start();
     }
 
     /**
@@ -382,7 +485,8 @@ public class MainActivity extends Activity {
             SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
             boolean crashed = CrashLog.get(MainActivity.this) != null;
             return granted + "|" + scheduled + "|" + p.getLong("last_poll", 0)
-                    + "|" + p.getString("last_poll_result", "never") + "|" + crashed;
+                    + "|" + p.getString("last_poll_result", "never") + "|" + crashed
+                    + "|" + p.getString("last_update_dl", "none");
         }
 
         @JavascriptInterface
@@ -391,6 +495,15 @@ public class MainActivity extends Activity {
                 PollJobService.notify(MainActivity.this,
                         "Test notification — native alerts are working ✓ " +
                         "(background checks run about every 30 minutes).");
+            } catch (Throwable t) {
+                CrashLog.store(MainActivity.this, t);
+            }
+        }
+
+        @JavascriptInterface
+        public void downloadUpdate() {
+            try {
+                downloadUpdateApk();
             } catch (Throwable t) {
                 CrashLog.store(MainActivity.this, t);
             }
