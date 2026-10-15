@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.10.1)
+Emergency Food Storage Tracker — Web UI server (v2.10.2)
 =====================================================
 Zero-dependency web server (Python stdlib only).
+
+v2.10.2:
+- Real push notifications: a background checker on the server (about
+  every six hours) watches every household's inventory and pushes an
+  alert to your phone when an item changes status tag ("less than 6
+  months", "less than 3 months", "less than 1 month", expired) — even
+  when the app is not open. Pushes go through ntfy, Gotify or Pushover,
+  configured in Settings -> Notifications (global admin). New
+  endpoints: GET/POST /api/admin/push, POST /api/admin/push/test.
+  The in-app banner alerts from v2.10.1 remain as a complement.
 
 v2.10.1:
 - The separate Barcodes tab is gone: barcode data now lives in the
@@ -96,6 +106,7 @@ import json
 import os
 import re
 import secrets
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -117,6 +128,8 @@ USERS_FILE = os.path.join(CONFIG_DIR, "users.json")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 PRODUCTS_CSV = os.path.join(DATA_DIR, "products.csv")   # global product list
 PORT = int(os.environ.get("PORT", "4500"))
+# v2.10.2: how often the background push checker runs (seconds)
+PUSH_CHECK_SECONDS = int(os.environ.get("PUSH_CHECK_SECONDS", "21600"))
 
 # v2.4.2: outbound OIDC requests use a browser-like User-Agent so that
 # bot-protection layers in front of OIDC providers (e.g. Cloudflare
@@ -256,6 +269,9 @@ def get_config():
     auth.setdefault("password_login", True)   # v2.5: password login toggle
     cfg.setdefault("barcodes", {})            # v2.7: barcode -> product mappings
     cfg.setdefault("barcode_imports", {})    # v2.9: imported country lists
+    cfg.setdefault("push", {"enabled": False, "service": "ntfy",
+                            "url": "", "token": "", "user": ""})
+    # v2.10.2 push default
     save_json(CONFIG_FILE, cfg)
     return cfg
 
@@ -859,6 +875,103 @@ def products_view():
     return products
 
 
+# ======================= push notifications (v2.10.2) =======================
+
+PUSH_LEVEL_TEXT = {"ok": "fine", "6months": "less than 6 months",
+                   "3months": "less than 3 months",
+                   "1month": "less than 1 month", "expired": "expired"}
+PUSH_RANK = {"ok": 0, "6months": 1, "3months": 2, "1month": 3, "expired": 4}
+
+
+def send_push(push, title, body):
+    """Send one push notification via the configured service.
+
+    Returns (ok, error). Supported services:
+      ntfy     - url is the topic URL (e.g. https://ntfy.sh/my-topic)
+      gotify   - url is the server root, token is the application token
+      pushover - token is the app token, user is the user key
+    """
+    service = str(push.get("service") or "ntfy").strip().lower()
+    try:
+        if service == "ntfy":
+            url = str(push.get("url") or "").strip()
+            if not url:
+                return False, "ntfy: topic URL is missing."
+            req = urllib.request.Request(
+                url, data=body.encode("utf-8"),
+                headers={"Title": title, "User-Agent": "emergency-food-tracker"})
+            urllib.request.urlopen(req, timeout=10)
+        elif service == "gotify":
+            url = str(push.get("url") or "").strip().rstrip("/")
+            token = str(push.get("token") or "").strip()
+            if not url or not token:
+                return False, "Gotify: server URL and app token are required."
+            data = json.dumps({"title": title, "message": body}).encode("utf-8")
+            req = urllib.request.Request(
+                url + "/message?token=" + urllib.parse.quote(token),
+                data=data, headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=10)
+        elif service == "pushover":
+            token = str(push.get("token") or "").strip()
+            user = str(push.get("user") or "").strip()
+            if not token or not user:
+                return False, "Pushover: app token and user key are required."
+            data = urllib.parse.urlencode({
+                "token": token, "user": user,
+                "title": title, "message": body}).encode("utf-8")
+            req = urllib.request.Request(
+                "https://api.pushover.net/1/messages.json", data=data)
+            urllib.request.urlopen(req, timeout=10)
+        else:
+            return False, f"Unknown push service '{service}'."
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
+def run_push_check():
+    """Compare every item's status tag with the previous check and push
+    an alert listing the items that got worse. The first run only
+    establishes the baseline (no alert)."""
+    cfg = get_config()
+    push = cfg.get("push") or {}
+    if not push.get("enabled"):
+        return
+    prev = cfg.get("push_levels", {})
+    cur = {}
+    lines = []
+    for hh in list_households():
+        for r in inventory_view(hh):
+            key = f"{hh}:{r['id']}"
+            level = r.get("level", "ok")
+            cur[key] = level
+            old = prev.get(key)
+            if old and old != level and PUSH_RANK.get(level, 0) > PUSH_RANK.get(old, 0):
+                name = r.get("product", "")
+                man = r.get("manufacturer", "")
+                label = f"{name} ({man})" if man else name
+                lines.append(f"{label}: {PUSH_LEVEL_TEXT.get(old, old)} -> "
+                             f"{PUSH_LEVEL_TEXT.get(level, level)}")
+    cfg["push_levels"] = cur
+    save_json(CONFIG_FILE, cfg)
+    if lines:
+        body = "\n".join(lines[:20])
+        if len(lines) > 20:
+            body += f"\n... and {len(lines) - 20} more"
+        ok, err = send_push(push, "Food storage alert", body)
+        if not ok:
+            print("push notification failed:", err)
+
+
+def push_loop():
+    while True:
+        time.sleep(PUSH_CHECK_SECONDS)
+        try:
+            run_push_check()
+        except Exception as e:
+            print("push check failed:", e)
+
+
 # ======================= HTTP =======================
 
 def send_redirect(handler, location, set_cookie=None):
@@ -1038,7 +1151,7 @@ class Handler(BaseHTTPRequestHandler):
                     "oidc_enabled": oidc_enabled(),
                     "password_login": password_login_enabled(),
                     "oidc_name": get_config()["oidc"].get("name") or "SSO",
-                    "version": "2.10.1",
+                    "version": "2.10.2",
                     "user": ({**user_public(user),
                               "api_key": user.get("api_key", ""),
                               "visible_households": user_households(user) if not is_global_admin(user)
@@ -1111,6 +1224,10 @@ class Handler(BaseHTTPRequestHandler):
                 # v2.9: bundled country barcode lists + import status
                 require_global_admin(self)
                 self.reply(200, {"countries": barcode_countries()})
+            elif path == "/api/admin/push":
+                # v2.10.2: server-side push notification settings
+                require_global_admin(self)
+                self.reply(200, {"push": get_config().get("push", {})})
             elif path == "/api/admin/barcodes":
                 # v2.7: list barcode -> product mappings (v2.9: with size)
                 require_global_admin(self)
@@ -1341,6 +1458,33 @@ class Handler(BaseHTTPRequestHandler):
                 require_global_admin(self)
                 res = import_barcode_country(body.get("country", ""))
                 self.reply(200, {"ok": True, **res})
+            elif path == "/api/admin/push":
+                # v2.10.2: save push notification settings
+                require_global_admin(self)
+                push = {
+                    "enabled": bool(body.get("enabled")),
+                    "service": str(body.get("service", "ntfy")).strip().lower(),
+                    "url": str(body.get("url", "")).strip(),
+                    "token": str(body.get("token", "")).strip(),
+                    "user": str(body.get("user", "")).strip(),
+                }
+                if push["service"] not in ("ntfy", "gotify", "pushover"):
+                    raise ValueError("Unknown push service.")
+                cfg = get_config()
+                cfg["push"] = push
+                save_json(CONFIG_FILE, cfg)
+                self.reply(200, {"ok": True})
+            elif path == "/api/admin/push/test":
+                # v2.10.2: send a test push to verify the settings
+                require_global_admin(self)
+                push = get_config().get("push", {})
+                if not push.get("enabled"):
+                    raise ValueError("Enable push notifications first.")
+                ok, err = send_push(push, "Food storage tracker",
+                                    "Test push - server notifications work.")
+                if not ok:
+                    raise ValueError(f"Push failed: {err}")
+                self.reply(200, {"ok": True})
             elif path == "/api/admin/oidc":
                 require_global_admin(self)
                 cfg = get_config()
@@ -1615,8 +1759,10 @@ def main():
         write_csv(PRODUCTS_CSV, PRODUCTS_HEADER, [])
     get_users()   # normalizes roles + generates per-user API keys
     get_config()
+    # v2.10.2: background push checker (daemon; survives nothing to do)
+    threading.Thread(target=push_loop, daemon=True).start()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.10.1: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v2.10.2: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 
