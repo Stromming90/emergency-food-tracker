@@ -1,53 +1,48 @@
-# v2.9.0 — Barcode country lists, per-column filters, storage guide
-
-## Barcodes
-- **Country lists, opt-in**: the barcode reference list now starts empty.
-  A global admin imports the bundled **Sweden** list (1 747 scanned
-  grocery products) in **Settings → Barcodes** — "Use the below dropdown
-  menu to add a pre-existing list of scanned barcodes, sorted by country
-  of purchase" — with a confirmation before anything is added. Each list
-  is imported once; products that already exist are not duplicated, and
-  mappings you delete afterwards stay deleted.
-- **Barcodes tab reworked**: the "Map barcode" form is gone. Removing or
-  adding mappings is now behind an **Edit button** (global admin) with
-  buffered changes and a **Confirm changes** button. The list shows
-  barcode, product, brand and size in separate, filterable columns.
-- Sizes that were baked into product names (e.g. "Fusilli Fullkorn
-  500g") are cleaned up and live only in the size field.
-
-## Household
-- **Record a purchase**: new **Category** filter between Type and
-  Product; the product dropdown now also shows the size.
-- The **Scan** button moved from the Inventory section to *Record a
-  purchase* (it still adds scanned items straight into the inventory,
-  with quantity, separate from the product-list scan).
-- **Inventory list**: a text filter per column — filter on several
-  things at once.
-
-## Products
-- **Add a product** has a **Barcode** field, and its own **Scan**
-  button (moved here from the top bar). Scanning a barcode that isn't on
-  the list pre-fills the form with the barcode and prompts you to
-  continue adding the information.
-- **Size** is now free text and accepts "/", e.g. **"500/350 g"**.
-- **Product list**: a text filter per column.
-
-## Information
-- New **storage & shelf life** table for the 30 most common emergency
-  foods — consistent **months** throughout, plus notes on which foods
-  (white rice, honey, sugar, canned goods …) stay good long beyond
-  their "best before" date.
+# v2.10.0 — Types & Categories tab, notifications, safer edit modes
 
 ## Mobile app
-- The "Get for Android" phone-app button is removed from the app UI —
-  the app is a thin WebView wrapper, so every update arrives with the
-  server and no APK reinstall is needed. `app-version.txt` still tracks
-  the version (now 2.9.0) for the versioned download URL.
+The downloadable APK is always named after the current version — with
+this update it is served as **emergency-food-tracker-2.10.0.apk** —
+even though the app binary itself is unchanged. The app is a thin
+WebView wrapper: every feature below arrives through the web UI the
+moment the server is updated, so **no reinstall is needed**.
 
-## Upgrade notes
-Existing v2.8 instances keep their already-seeded barcode mappings and
-products (config/data are untouched). To start from a clean barcode
-list, delete the mappings in the Barcodes tab's edit mode; to (re-)add
-the Sweden list, use Settings → Barcodes.
+## Household
+- **Inventory**: the big filter box is gone — the per-column filters
+  stay and cover everything it did (the Product column filter also
+  matches the manufacturer).
 
-Web app version: 2.9.0.
+## Products
+- The product list's big filter box is gone — per-column filters only.
+- **Removing products is locked behind an edit button**: the ✕ remove
+  buttons only appear after pressing **✏️ Edit** (press **Done** to
+  exit). Editing a product's details still uses the ✎ button.
+
+## Barcodes
+- Behind the **✏️ Edit** button, global admins can now also **change
+  existing mappings**: each row gets a ✎ that opens it for inline
+  editing — change the barcode, pick a different product (brand and
+  size follow automatically) — then buffer the changes and press
+  **Confirm changes**. Removals and new mappings work as before, all
+  buffered until you confirm.
+
+## Types & Categories (moved out of Settings)
+- The Types tab moved from Settings to **a tab on the main page** and
+  is renamed **Types & Categories**.
+- Access is **global admin only**.
+- The tab shows a read-only table (type, categories, shelf life in
+  months); editing is locked behind an **✏️ Edit** button with
+  Save / Cancel, and **+ Add type** / **Reset to defaults** only
+  appear while editing.
+
+## Settings → Notifications (new)
+- A new **Notifications** section with a toggle for push notifications
+  on this device (plus a test button).
+- The app now **alerts you when items change status tag** — "Less than
+  6 months", "Less than 3 months", "Less than 1 month" or "Expired" —
+  e.g. when a best-before date crosses a threshold. Checks run whenever
+  the app refreshes (about once a minute while open, and after every
+  change). Uses the browser/WebView notification system; grant
+  permission when prompted.
+
+Web app version: 2.10.0.

@@ -1,8 +1,21 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.9.0)
+Emergency Food Storage Tracker — Web UI server (v2.10.0)
 =====================================================
 Zero-dependency web server (Python stdlib only).
+
+v2.10:
+- Pure UI reorganisation; the only server change is the version bump:
+  - "Types & Categories" moves from Settings to a tab on the main page
+    (global admin only, editing behind an Edit button)
+  - the big list filters are gone; per-column filters remain
+  - barcode mappings are editable inline in the Barcodes tab's edit mode
+  - client-side notifications: Settings -> Notifications toggles alerts
+    for items that change status tag (less than 6 months etc.)
+  - product removal is locked behind an edit button
+  The downloadable APK is always named after the current version
+  (app-version.txt -> 2.10.0) even though the app binary is unchanged -
+  it is a thin WebView wrapper.
 
 v2.9:
 - Barcode reference lists are now opt-in per country: nothing is seeded
@@ -1003,7 +1016,7 @@ class Handler(BaseHTTPRequestHandler):
                     "oidc_enabled": oidc_enabled(),
                     "password_login": password_login_enabled(),
                     "oidc_name": get_config()["oidc"].get("name") or "SSO",
-                    "version": "2.9.0",
+                    "version": "2.10.0",
                     "user": ({**user_public(user),
                               "api_key": user.get("api_key", ""),
                               "visible_households": user_households(user) if not is_global_admin(user)
@@ -1581,7 +1594,7 @@ def main():
     get_users()   # normalizes roles + generates per-user API keys
     get_config()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.9.0: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v2.10.0: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 
