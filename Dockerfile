@@ -5,6 +5,7 @@ WORKDIR /app
 COPY server.py .
 COPY static/ ./static/
 COPY app/ ./app/
+COPY data/ ./data/
 
 # /data   -> global products.csv + household inventory CSVs
 # /config -> users.json, config.json (api key, OIDC settings)
