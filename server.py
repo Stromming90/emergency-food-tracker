@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.7.3)
+Emergency Food Storage Tracker — Web UI server (v2.8.0)
 =====================================================
 Zero-dependency web server (Python stdlib only).
+
+v2.8:
+- Bundled Swedish emergency-food barcode defaults
+  (data/barcode-defaults.json, 1747 products): on first start they are
+  seeded into the global product list and the barcode mappings. Existing
+  products/mappings are never overwritten; admin deletions stick.
+- Inventory scan: the web/app UI has a separate "Scan" in the Household →
+  Inventory section that adds a scanned product to the inventory with an
+  arbitrary quantity (distinct from the header scan that fills the
+  product-list "Buy" form)
 
 v2.7.3:
 - /app.apk download is versioned (emergency-food-tracker-<ver>.apk) and
@@ -63,6 +73,11 @@ CONFIG_DIR = os.environ.get("CONFIG_DIR", os.path.join(APP_DIR, "config"))
 STATIC_DIR = os.path.join(APP_DIR, "static")
 APP_APK_B64 = os.path.join(APP_DIR, "app", "eft-app.apk.b64")  # v2.7 android app
 APP_APK_BYTES = None                      # decoded once on first request
+# v2.8: bundled Swedish emergency-food barcode defaults. The file lives next
+# to server.py (image path in Docker), NOT inside DATA_DIR, so a mounted
+# /data volume can never shadow it.
+BARCODE_DEFAULTS_FILE = os.path.join(APP_DIR, "data", "barcode-defaults.json")
+BARCODE_DEFAULTS_SEED = "v2.8"             # bump to re-seed after data updates
 USERS_FILE = os.path.join(CONFIG_DIR, "users.json")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 PRODUCTS_CSV = os.path.join(DATA_DIR, "products.csv")   # global product list
@@ -508,6 +523,62 @@ def ensure_global_products():
     write_csv(PRODUCTS_CSV, PRODUCTS_HEADER, merged)
 
 
+def seed_barcode_defaults():
+    """v2.8: seed the bundled Swedish emergency-food barcode defaults.
+
+    On first start (or when BARCODE_DEFAULTS_SEED changes): add any missing
+    products from data/barcode-defaults.json to the global product list and
+    map their barcodes. Never overwrites existing products or mappings, and
+    runs only once per seed version — mappings deleted by an admin stay
+    deleted.
+    """
+    cfg = get_config()
+    if cfg.get("barcode_defaults_seed") == BARCODE_DEFAULTS_SEED:
+        return
+    try:
+        with open(BARCODE_DEFAULTS_FILE, encoding="utf-8") as f:
+            defaults = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        defaults = []
+    if not isinstance(defaults, list):
+        defaults = []
+    type_ids = {t["id"] for t in get_food_types()}
+    products = read_csv(PRODUCTS_CSV)
+    seen = {(p.get("name", "").lower(), p.get("manufacturer", "").lower())
+            for p in products}
+    barcodes = cfg.setdefault("barcodes", {})
+    added = mapped = 0
+    for d in defaults:
+        name = str(d.get("name", "")).strip()
+        code = str(d.get("barcode", "")).strip()
+        manufacturer = str(d.get("manufacturer", "")).strip()
+        if not name or not code:
+            continue
+        key = (name.lower(), manufacturer.lower())
+        if key not in seen:
+            seen.add(key)
+            ftype = d.get("type", "")
+            products.append({
+                "name": name,
+                "manufacturer": manufacturer,
+                "type": ftype if ftype in type_ids else "",
+                "category": str(d.get("category", "")).strip(),
+                "size": str(d.get("size", "")).strip(),
+                "added_date": today().isoformat(),
+            })
+            added += 1
+        if code not in barcodes:
+            barcodes[code] = {"name": name, "manufacturer": manufacturer}
+            mapped += 1
+    if added:
+        write_csv(PRODUCTS_CSV, PRODUCTS_HEADER, products)
+    cfg["barcode_defaults_seed"] = BARCODE_DEFAULTS_SEED
+    save_json(CONFIG_FILE, cfg)
+    if added or mapped:
+        print(f"v2.8 barcode defaults seeded: {added} product(s) added, "
+              f"{mapped} barcode(s) mapped")
+
+
 # ======================= model =======================
 
 def alert_level(best):
@@ -890,7 +961,7 @@ class Handler(BaseHTTPRequestHandler):
                     "oidc_enabled": oidc_enabled(),
                     "password_login": password_login_enabled(),
                     "oidc_name": get_config()["oidc"].get("name") or "SSO",
-                    "version": "2.7.4",
+                    "version": "2.8.0",
                     "user": ({**user_public(user),
                               "api_key": user.get("api_key", ""),
                               "visible_households": user_households(user) if not is_global_admin(user)
@@ -1449,10 +1520,12 @@ def main():
     ensure_global_products()
     if not os.path.exists(PRODUCTS_CSV):
         write_csv(PRODUCTS_CSV, PRODUCTS_HEADER, [])
+    # v2.8: seed the bundled Swedish emergency-food barcode defaults
+    seed_barcode_defaults()
     get_users()   # normalizes roles + generates per-user API keys
     get_config()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.7.3: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v2.8.0: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 
