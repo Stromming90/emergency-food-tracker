@@ -467,9 +467,10 @@
         <li><b>Authentication</b> — configure OIDC / SSO login (Keycloak,
         Authentik, Authelia…), and enable/disable SSO or password login.
         Global admin only.</li>
-        <li><b>Notifications</b> — turn push notifications on or off for
-        this device; you are alerted when items change status ("less than
-        6 months", "less than 3 months" …).</li>
+        <li><b>Notifications</b> — in-app alerts on this device when
+        items change status ("less than 6 months" …), plus <b>server
+        push notifications to your phone even when the app is closed</b>
+        (via ntfy / Gotify / Pushover; global admin only).</li>
         <li><b>API Key</b> — your personal key for the gethomepage widget.
         Each user has their own key and can regenerate it at any time; the
         widget only reports the households you have access to.</li>
@@ -571,15 +572,50 @@
       <h3 style="margin:0 0 6px">Notifications</h3>
       <div class="check-row"><span>Push notifications on this device</span>
         <input type="checkbox" id="notif-toggle"></div>
-      <p class="muted">When enabled, the app alerts you when items change
-      status tag ("Less than 6 months", "Less than 3 months", "Less than
-      1 month" or "Expired") — e.g. when a product's best-before date
-      crosses a threshold. The check runs whenever the app refreshes
-      (about once a minute while it is open, and after every change).</p>
+      <p class="muted">When enabled, the app alerts you (in-app banner
+      on the phone, notification in the browser) when items change status
+      tag ("Less than 6 months", "Less than 3 months", "Less than 1
+      month" or "Expired"). This check runs while the app is open.</p>
       <div class="row">
         <button id="notif-test" class="ghost">Send test notification</button>
       </div>
       <div class="msg" id="msg-notif"></div>
+
+      <div id="push-section">
+        <h3 style="margin:16px 0 6px">Push notifications (server)</h3>
+        <p class="muted">Real push notifications to your phone, <b>even
+        when the app is not open</b>. The server checks every household
+        about every six hours and pushes an alert when items change
+        status tag or expire. Delivered through ntfy, Gotify or
+        Pushover — install the matching app on your phone. Global admin
+        only.</p>
+        <div class="check-row"><span>Enable server push notifications</span>
+          <input type="checkbox" id="push-enable"></div>
+        <div class="row">
+          <select id="push-service" style="flex:0;max-width:160px">
+            <option value="ntfy">ntfy</option>
+            <option value="gotify">Gotify</option>
+            <option value="pushover">Pushover</option>
+          </select>
+          <input id="push-url" placeholder="URL — ntfy: topic URL (e.g. https://ntfy.sh/my-topic); Gotify: server URL"
+                 style="flex:1;min-width:260px">
+        </div>
+        <div class="row">
+          <input id="push-token" placeholder="Token — Gotify app token / Pushover app token"
+                 style="flex:1;min-width:220px">
+          <input id="push-user" placeholder="User key — Pushover only"
+                 style="flex:1;min-width:180px">
+        </div>
+        <p class="muted" style="font-size:.8rem;margin:2px 0 6px">
+          ntfy: pick a secret topic and subscribe to it in the ntfy app.
+          Gotify: paste your server URL and an app token. Pushover: app
+          token + user key from pushover.net.</p>
+        <div class="row">
+          <button id="push-save" class="ghost">Save push settings</button>
+          <button id="push-test" class="ghost">Send test push</button>
+        </div>
+        <div class="msg" id="msg-push"></div>
+      </div>
     </div>
 
     <!-- ============ API Key tab ============ -->
@@ -1465,7 +1501,10 @@ async function openSettings(keepTab) {
   if (isGlobalAdmin()) {
     const c = await api('GET', '/api/admin/config');
     if (!c.error) { ADMIN.config = c; renderAuth(c); }
+    const ps = await api('GET', '/api/admin/push');
+    if (!ps.error) fillPushSettings(ps.push || {});
   }
+  $('push-section').hidden = !isGlobalAdmin();
   syncNotifToggle();
   showTab(keepTab || 'general');
 }
@@ -1829,6 +1868,28 @@ $('notif-test').addEventListener('click', () => {
   const ok = showNotif('Food storage tracker',
     'Test notification — this is what alerts look like.');
   msg('msg-notif', ok ? 'Alert shown ✓' : 'The alert could not be shown.', ok);
+});
+
+// ---- server push notifications (real phone push, also when closed) ----
+function fillPushSettings(p) {
+  $('push-enable').checked = !!p.enabled;
+  $('push-service').value = p.service || 'ntfy';
+  $('push-url').value = p.url || '';
+  $('push-token').value = p.token || '';
+  $('push-user').value = p.user || '';
+}
+$('push-save').addEventListener('click', async () => {
+  const j = await api('POST', '/api/admin/push', {
+    enabled: $('push-enable').checked,
+    service: $('push-service').value,
+    url: $('push-url').value.trim(),
+    token: $('push-token').value.trim(),
+    user: $('push-user').value.trim() });
+  msg('msg-push', j.error || 'Push settings saved ✓', !j.error);
+});
+$('push-test').addEventListener('click', async () => {
+  const j = await api('POST', '/api/admin/push/test', {});
+  msg('msg-push', j.error || 'Test push sent ✓ — check your phone.', !j.error);
 });
 
 const LEVEL_RANK = { ok: 0, '6months': 1, '3months': 2, '1month': 3, expired: 4 };
