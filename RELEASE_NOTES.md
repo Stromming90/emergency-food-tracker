@@ -1,20 +1,38 @@
-# v2.7.4 — Cache-proof APK download
+# v2.8.0 — Barcode defaults + scan straight into inventory
 
-## Why the phone still downloaded the old APK
-Every download used the same URL (`/app.apk`), so a cache between the phone
-and the server (browser cache / Cloudflare / proxy) could hand back the stale
-response from before the update — which is why the PC got the new versioned
-file while the phone did not.
+## Swedish emergency-food barcode defaults
+The tracker now ships with a bundled barcode reference list:
+`data/barcode-defaults.json` — **1 747 Swedish grocery products** (pasta,
+rice, canned fish, oils, honey, crispbread, coffee …) collected from Open
+Food Facts and cleaned up (brand spellings, name casing, dedup).
 
-## What's fixed
-- The **Get for Android** button now points at a **versioned URL**:
-  `/app-2.7.3.apk`. A unique URL per app version cannot be served from any
-  cache — the phone always gets the real current file.
-- The page fetches the current app version from `/app-version.txt`
-  (uncached) and rewrites the download link on every login, so the link
-  always matches the bundled app.
-- The old `/app.apk` URL still works (with the versioned filename and
-  `no-store`), for anything that kept the old link.
+On first start they are seeded automatically:
+- products missing from your global product list are added (with type,
+  category and size), existing products are never touched;
+- their barcodes are mapped, so scanning any of them resolves instantly.
 
-The app binary itself is unchanged from 2.7.3 (App v2.7.3, versionCode 30).
-Web app version: 2.7.4.
+Seeding runs once; mappings you delete afterwards stay deleted.
+
+## Scan items straight into the inventory (Android app)
+The Household → **Inventory** section has its own **📷 Scan** button. It
+opens a dedicated scanner that:
+- resolves the scanned barcode to a product,
+- asks for **how many** you're adding (quantity) and the best-before
+  date (suggested from the product type's shelf life) — so you don't need
+  to scan every single item,
+- adds them to the inventory immediately, and offers **Scan another**
+  for rapid stock-taking.
+
+This is completely separate from the top-bar 📷 scan, which pre-fills the
+*Record a purchase* form and maps unknown barcodes (global admin) — that
+workflow is unchanged.
+
+## Phone app
+App version bumps to **2.8.0** (versionCode 31) in the source. The APK is
+a thin WebView wrapper: the new inventory scan and the barcode defaults
+arrive through the web UI the moment the server (Docker image) is updated
+— **no APK reinstall is needed**. The downloadable APK remains the
+unchanged 2.7.3 binary until the next wrapper rebuild
+(`app-version.txt` still reports it honestly).
+
+Web app version: 2.8.0.
