@@ -467,10 +467,12 @@
         <li><b>Authentication</b> — configure OIDC / SSO login (Keycloak,
         Authentik, Authelia…), and enable/disable SSO or password login.
         Global admin only.</li>
-        <li><b>Notifications</b> — in-app alerts on this device when
-        items change status ("less than 6 months" …), plus <b>server
-        push notifications to your phone even when the app is closed</b>
-        (via ntfy / Gotify / Pushover; global admin only).</li>
+        <li><b>Notifications</b> — enable <b>real push notifications</b>
+        on each device with one tap (Settings → Notifications). No
+        third-party apps, no accounts, no tokens: the server generates
+        its own keys and your browser's push service delivers the
+        alerts — even when the app is closed. Each user manages their
+        own devices.</li>
         <li><b>API Key</b> — your personal key for the gethomepage widget.
         Each user has their own key and can regenerate it at any time; the
         widget only reports the households you have access to.</li>
@@ -570,52 +572,20 @@
     <!-- ============ Notifications tab ============ -->
     <div class="tabpane" data-pane="notifications" hidden>
       <h3 style="margin:0 0 6px">Notifications</h3>
-      <div class="check-row"><span>Push notifications on this device</span>
-        <input type="checkbox" id="notif-toggle"></div>
-      <p class="muted">When enabled, the app alerts you (in-app banner
-      on the phone, notification in the browser) when items change status
+      <p class="muted">Real push notifications to your phone, <b>even
+      when the app is closed</b> — with <b>no third-party apps, accounts
+      or tokens</b>. The server checks all households about every six
+      hours and alerts every subscribed device when items change status
       tag ("Less than 6 months", "Less than 3 months", "Less than 1
-      month" or "Expired"). This check runs while the app is open.</p>
+      month" or "Expired"). Enable it once per device; delivery uses
+      your browser's built-in push service.</p>
       <div class="row">
-        <button id="notif-test" class="ghost">Send test notification</button>
+        <button id="push-enable">Enable notifications on this device</button>
+        <button id="push-disable" class="ghost" hidden>Disable on this device</button>
+        <button id="push-test" class="ghost">Send test notification</button>
       </div>
+      <p class="muted" id="push-state" style="margin-top:6px"></p>
       <div class="msg" id="msg-notif"></div>
-
-      <div id="push-section">
-        <h3 style="margin:16px 0 6px">Push notifications (server)</h3>
-        <p class="muted">Real push notifications to your phone, <b>even
-        when the app is not open</b>. The server checks every household
-        about every six hours and pushes an alert when items change
-        status tag or expire. Delivered through ntfy, Gotify or
-        Pushover — install the matching app on your phone. Global admin
-        only.</p>
-        <div class="check-row"><span>Enable server push notifications</span>
-          <input type="checkbox" id="push-enable"></div>
-        <div class="row">
-          <select id="push-service" style="flex:0;max-width:160px">
-            <option value="ntfy">ntfy</option>
-            <option value="gotify">Gotify</option>
-            <option value="pushover">Pushover</option>
-          </select>
-          <input id="push-url" placeholder="URL — ntfy: topic URL (e.g. https://ntfy.sh/my-topic); Gotify: server URL"
-                 style="flex:1;min-width:260px">
-        </div>
-        <div class="row">
-          <input id="push-token" placeholder="Token — Gotify app token / Pushover app token"
-                 style="flex:1;min-width:220px">
-          <input id="push-user" placeholder="User key — Pushover only"
-                 style="flex:1;min-width:180px">
-        </div>
-        <p class="muted" style="font-size:.8rem;margin:2px 0 6px">
-          ntfy: pick a secret topic and subscribe to it in the ntfy app.
-          Gotify: paste your server URL and an app token. Pushover: app
-          token + user key from pushover.net.</p>
-        <div class="row">
-          <button id="push-save" class="ghost">Save push settings</button>
-          <button id="push-test" class="ghost">Send test push</button>
-        </div>
-        <div class="msg" id="msg-push"></div>
-      </div>
     </div>
 
     <!-- ============ API Key tab ============ -->
@@ -733,12 +703,6 @@
     <div class="msg" id="msg-eu"></div>
   </div>
 </div>
-
-<!-- in-app alert banner (phone app + notification-permission fallback) -->
-<div id="toast" hidden style="position:fixed;top:14px;left:50%;
-     transform:translateX(-50%);z-index:9999;max-width:92%;
-     padding:12px 18px;border-radius:10px;background:#1f2430;color:#fff;
-     font-size:.9rem;line-height:1.4;box-shadow:0 6px 24px rgba(0,0,0,.35)"></div>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -902,7 +866,6 @@ async function load() {
   DATA = await api('GET', '/api/data?household=' + encodeURIComponent(HH));
   if (DATA.error) { alert(DATA.error); return; }
   localStorage.setItem('household', HH);
-  checkLevelChanges();
   render();
 }
 
@@ -1501,11 +1464,8 @@ async function openSettings(keepTab) {
   if (isGlobalAdmin()) {
     const c = await api('GET', '/api/admin/config');
     if (!c.error) { ADMIN.config = c; renderAuth(c); }
-    const ps = await api('GET', '/api/admin/push');
-    if (!ps.error) fillPushSettings(ps.push || {});
   }
-  $('push-section').hidden = !isGlobalAdmin();
-  syncNotifToggle();
+  refreshPushState();
   showTab(keepTab || 'general');
 }
 
@@ -1813,106 +1773,95 @@ $('apikey-regen').addEventListener('click', async () => {
   msg('msg-apikey', 'New API key generated ✓', true);
 });
 
-// ---- notifications (Settings tab + level-change alerts) ----
-let NOTIF_ON = localStorage.getItem('notifications') === '1';
-let lastLevels = null, lastLevelsHH = '';
-let toastTimer = null;
+// ---- web push notifications (zero-config Web Push / VAPID) ----
+const PUSH_SUPPORTED = 'serviceWorker' in navigator && 'PushManager' in window;
 
-function toastMsg(text) {
-  const t = $('toast');
-  t.textContent = text;
-  t.hidden = false;
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.hidden = true; }, 6000);
+function b64urlToBytes(b64) {
+  const pad = '='.repeat((4 - b64.length % 4) % 4);
+  const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
 }
 
-function syncNotifToggle() {
-  const t = $('notif-toggle');
-  t.checked = NOTIF_ON;
-  t.disabled = false;
-}
-
-function showNotif(title, body) {
-  // v2.10.1 phone-app fix: the Android WebView never grants the
-  // Notification permission, so in the app (and anywhere permission is
-  // missing) alerts fall back to the in-app banner + vibration.
-  if (!IN_APP && 'Notification' in window && Notification.permission === 'granted') {
-    try { new Notification(title, { body }); return true; } catch (e) { /* fall back */ }
+async function refreshPushState() {
+  const st = $('push-state');
+  const local = localStorage.getItem('pushEndpoint');
+  let remote = [];
+  if (USER) {
+    const j = await api('GET', '/api/push/status');
+    if (!j.error) remote = j.endpoints || [];
   }
-  toastMsg(title + ' — ' + body);
-  if (navigator.vibrate) { try { navigator.vibrate([120, 60, 120]); } catch (e) {} }
-  return true;
-}
-
-$('notif-toggle').addEventListener('change', async e => {
-  if (e.target.checked) {
-    // Browsers ask for permission; the phone app (WebView) can't grant
-    // it, so there we skip the prompt and use the in-app banner.
-    if (!IN_APP && 'Notification' in window) {
-      let p = Notification.permission;
-      if (p === 'default') p = await Notification.requestPermission();
-    }
-    NOTIF_ON = true; localStorage.setItem('notifications', '1');
-    msg('msg-notif', IN_APP
-      ? 'Notifications enabled on this device ✓ (alerts appear as in-app banners)'
-      : 'Notifications enabled on this device ✓', true);
+  const enabledHere = !!local && remote.includes(local);
+  $('push-enable').hidden = enabledHere;
+  $('push-disable').hidden = !enabledHere;
+  if (!PUSH_SUPPORTED) {
+    st.textContent = 'Push notifications are not available in this app ' +
+      '(the Android WebView cannot receive them). Open the tracker in ' +
+      'Chrome or Firefox on your phone — or add it to the home screen ' +
+      '— and enable notifications there.';
+  } else if (enabledHere) {
+    st.textContent = 'Notifications are enabled on this device ✓ — ' +
+      'alerts will arrive even when the app is closed.';
   } else {
-    NOTIF_ON = false; localStorage.setItem('notifications', '0');
-    msg('msg-notif', 'Notifications turned off.', true);
+    st.textContent = 'Not enabled on this device yet.';
   }
-  syncNotifToggle();
-});
-
-$('notif-test').addEventListener('click', () => {
-  if (!NOTIF_ON) return msg('msg-notif', 'Turn notifications on first.', false);
-  const ok = showNotif('Food storage tracker',
-    'Test notification — this is what alerts look like.');
-  msg('msg-notif', ok ? 'Alert shown ✓' : 'The alert could not be shown.', ok);
-});
-
-// ---- server push notifications (real phone push, also when closed) ----
-function fillPushSettings(p) {
-  $('push-enable').checked = !!p.enabled;
-  $('push-service').value = p.service || 'ntfy';
-  $('push-url').value = p.url || '';
-  $('push-token').value = p.token || '';
-  $('push-user').value = p.user || '';
 }
-$('push-save').addEventListener('click', async () => {
-  const j = await api('POST', '/api/admin/push', {
-    enabled: $('push-enable').checked,
-    service: $('push-service').value,
-    url: $('push-url').value.trim(),
-    token: $('push-token').value.trim(),
-    user: $('push-user').value.trim() });
-  msg('msg-push', j.error || 'Push settings saved ✓', !j.error);
-});
-$('push-test').addEventListener('click', async () => {
-  const j = await api('POST', '/api/admin/push/test', {});
-  msg('msg-push', j.error || 'Test push sent ✓ — check your phone.', !j.error);
-});
 
-const LEVEL_RANK = { ok: 0, '6months': 1, '3months': 2, '1month': 3, expired: 4 };
-function checkLevelChanges() {
-  if (lastLevelsHH !== HH) { lastLevelsHH = HH; lastLevels = null; }
-  const cur = {};
-  DATA.inventory.forEach(r => { cur[String(r.id)] = r.level; });
-  if (lastLevels && NOTIF_ON) {
-    const hits = DATA.inventory.filter(r => {
-      const old = lastLevels[String(r.id)];
-      return old && old !== r.level &&
-        (LEVEL_RANK[r.level] || 0) > (LEVEL_RANK[old] || 0);
-    });
-    if (hits.length) {
-      const names = hits.slice(0, 3).map(r =>
-        r.product + (r.manufacturer ? ' (' + r.manufacturer + ')' : '')).join(', ');
-      showNotif('Food storage alert', hits.length === 1
-        ? names + ' is now "' + LEVEL_LABEL[hits[0].level] + '"'
-        : hits.length + ' item(s) changed status, e.g. ' + names);
+$('push-enable').addEventListener('click', async () => {
+  if (!PUSH_SUPPORTED) return msg('msg-notif',
+    'Push notifications are not available in this app. Open the tracker ' +
+    'in Chrome or Firefox on your phone and enable them there.', false);
+  let perm = 'Notification' in window ? Notification.permission : 'denied';
+  if (perm === 'default') {
+    try { perm = await Notification.requestPermission(); } catch (e) {}
+  }
+  if (perm !== 'granted') return msg('msg-notif',
+    'Notification permission was not granted.', false);
+  try {
+    const reg = await navigator.serviceWorker.register('sw.js');
+    await navigator.serviceWorker.ready;
+    const kp = await api('GET', '/api/push/vapid');
+    if (kp.error) return msg('msg-notif', kp.error, false);
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: b64urlToBytes(kp.publicKey) });
+    const raw = sub.toJSON();
+    const j = await api('POST', '/api/push/subscribe', { subscription: raw });
+    if (j.error) {
+      msg('msg-notif', j.error, false);
+      try { await sub.unsubscribe(); } catch (e) {}
+      return;
     }
+    localStorage.setItem('pushEndpoint', raw.endpoint);
+    msg('msg-notif', 'Notifications enabled on this device ✓ — a test ' +
+      'notification is on its way.', true);
+    refreshPushState();
+  } catch (e) {
+    msg('msg-notif', 'Could not enable notifications: ' + e, false);
   }
-  lastLevels = cur;
-}
+});
+
+$('push-disable').addEventListener('click', async () => {
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg ? await reg.pushManager.getSubscription() : null;
+    if (sub) await sub.unsubscribe();
+  } catch (e) {}
+  const ep = localStorage.getItem('pushEndpoint');
+  if (ep) await api('POST', '/api/push/unsubscribe', { endpoint: ep });
+  localStorage.removeItem('pushEndpoint');
+  msg('msg-notif', 'Notifications turned off on this device.', true);
+  refreshPushState();
+});
+
+$('push-test').addEventListener('click', async () => {
+  const j = await api('POST', '/api/push/test', {});
+  msg('msg-notif',
+    j.error || 'Test notification sent ✓ — check your notifications.',
+    !j.error);
+});
 
 // ---------- household switch ----------
 $('household').addEventListener('change', () => { HH = $('household').value; load(); });
