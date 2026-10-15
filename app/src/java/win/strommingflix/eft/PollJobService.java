@@ -30,6 +30,20 @@ import java.util.UUID;
  * install stays quiet until something actually changes. Each
  * successful poll refreshes the login session server-side, so the app
  * keeps working in the background without re-login.
+ *
+ * v2.12.2 CRASH FIX: this service runs inside the app's main process,
+ * so any exception that escapes it kills the whole app — and since the
+ * job is persisted, Android re-delivers it the moment the app process
+ * starts, which turned a single background crash into "the app closes
+ * and can never open again" (a reinstall does not clear the persisted
+ * job). Two changes fix that:
+ *  - The session cookie is now read on the MAIN thread (inside
+ *    onStartJob, which runs there). CookieManager/WebView access from
+ *    the worker thread could throw an *Error* (e.g. native WebView
+ *    provider load failure) which catch(Exception) cannot intercept.
+ *  - Everything catches Throwable and records it via CrashLog, so the
+ *    job can never take the process down again. The HTTP request still
+ *    runs off the main thread (network-on-main would otherwise ANR).
  */
 public class PollJobService extends JobService {
 
@@ -37,12 +51,34 @@ public class PollJobService extends JobService {
 
     @Override
     public boolean onStartJob(final JobParameters params) {
+        String base = null;
+        String device = null;
+        String cookie = null;
+        try {
+            SharedPreferences prefs = getSharedPreferences("eft", MODE_PRIVATE);
+            base = prefs.getString("server_url", null);
+            if (base == null || base.isEmpty()) return false; // not set up yet
+            device = prefs.getString("device_id", null);
+            if (device == null) {
+                device = UUID.randomUUID().toString();
+                prefs.edit().putString("device_id", device).apply();
+            }
+            // v2.12.2: main-thread cookie read (onStartJob has a Looper).
+            cookie = CookieManager.getInstance().getCookie(base);
+        } catch (Throwable t) {
+            CrashLog.store(this, t);   // record, never crash the process
+            return false;
+        }
+        if (cookie == null || cookie.isEmpty()) return false; // not logged in
+        final String fBase = base, fDevice = device, fCookie = cookie;
         worker = new Thread(() -> {
             try {
-                poll();
-            } catch (Exception ignored) {
+                poll(fBase, fDevice, fCookie);
+            } catch (Throwable t) {
+                CrashLog.store(PollJobService.this, t);
+            } finally {
+                try { jobFinished(params, false); } catch (Throwable ignored) { }
             }
-            jobFinished(params, false);
         });
         worker.start();
         return true;
@@ -50,24 +86,13 @@ public class PollJobService extends JobService {
 
     @Override
     public boolean onStopJob(JobParameters params) {
-        if (worker != null) worker.interrupt();
+        try {
+            if (worker != null) worker.interrupt();
+        } catch (Throwable ignored) { }
         return false;   // no retry; the next periodic run comes anyway
     }
 
-    private void poll() {
-        SharedPreferences prefs = getSharedPreferences("eft", MODE_PRIVATE);
-        String base = prefs.getString("server_url", null);
-        if (base == null || base.isEmpty()) return;   // app not set up yet
-        String device = prefs.getString("device_id", null);
-        if (device == null) {
-            device = UUID.randomUUID().toString();
-            prefs.edit().putString("device_id", device).apply();
-        }
-        // The WebView session cookie lives in the same process's
-        // CookieManager; without it we are not logged in (yet).
-        String cookie = CookieManager.getInstance().getCookie(base);
-        if (cookie == null || cookie.isEmpty()) return;
-
+    private void poll(String base, String device, String cookie) {
         HttpURLConnection c = null;
         try {
             URL u = new URL(base + "/api/push/inbox?device=" + device);
@@ -87,14 +112,17 @@ public class PollJobService extends JobService {
             if (alerts == null || alerts.length() == 0) return;
             StringBuilder body = new StringBuilder();
             for (int i = 0; i < alerts.length(); i++) {
-                if (i > 0) body.append("\\n");
+                if (i > 0) body.append("\n");
                 body.append(alerts.getString(i));
             }
-            if (more > 0) body.append("\\n… and ").append(more).append(" more");
+            if (more > 0) body.append("\n… and ").append(more).append(" more");
             raiseNotification(body.toString());
-        } catch (Exception ignored) {
+        } catch (Throwable t) {
+            CrashLog.store(this, t);
         } finally {
-            if (c != null) c.disconnect();
+            if (c != null) {
+                try { c.disconnect(); } catch (Throwable ignored) { }
+            }
         }
     }
 

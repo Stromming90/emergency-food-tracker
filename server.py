@@ -1,8 +1,24 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.12.2)
+Emergency Food Storage Tracker — Web UI server (v2.12.3)
 =====================================================
 Zero-dependency web server (Python stdlib only).
+
+v2.12.3:
+- Android app 2.12.2: fixes the crash loop reported on a real phone.
+   The background poll job (PollJobService) read the WebView session
+   cookie from its worker thread; on some devices that throws an
+   Error (not an Exception), which escaped the catch block and killed
+   the whole app process — because the job is persisted, Android
+   re-delivered it the moment the app process started, so the app
+   closed immediately and could not be opened again (a reinstall does
+   not clear the persisted job, matching the report exactly). The
+   cookie is now read on the main thread inside onStartJob, and the
+   whole job catches Throwable everywhere so it can never kill the
+   process again. The app also records any uncaught exception and
+   shows it on the next launch with a Copy button, so future crashes
+   can be reported from the phone without USB debugging. Server code
+   is unchanged (version bump only).
 
 v2.12.2:
 - Fix: on the old app (v2.12.0, which has no download handler), the
@@ -1518,7 +1534,7 @@ class Handler(BaseHTTPRequestHandler):
                     "oidc_enabled": oidc_enabled(),
                     "password_login": password_login_enabled(),
                     "oidc_name": get_config()["oidc"].get("name") or "SSO",
-                    "version": "2.12.2",
+                    "version": "2.12.3",
                     "user": ({**user_public(user),
                               "api_key": user.get("api_key", ""),
                               "visible_households": user_households(user) if not is_global_admin(user)
@@ -2218,7 +2234,7 @@ def main():
     # v2.11: background web-push checker (daemon)
     threading.Thread(target=push_loop, daemon=True).start()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.12.2: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v2.12.3: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 

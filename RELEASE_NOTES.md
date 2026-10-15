@@ -1,3 +1,36 @@
+# v2.12.3 — Fix: app crashed and could not be reopened (app 2.12.2)
+
+## What was wrong
+Right after installing the update and accepting the notification
+permission, the app would close — and from then on it could not be
+opened at all; reinstalling did not help.
+
+**Root cause**: the background notification job (PollJobService,
+running inside the app's own process) read the WebView session cookie
+from its worker thread. On some devices that throws an *Error* (a
+native WebView failure), which the `catch (Exception)` block could not
+intercept — the error killed the whole app process. Because the job is
+**persisted**, Android re-delivers it the moment the app process
+starts: open app → job fires → process dies. That is the crash loop,
+and reinstalling does not clear a persisted job.
+
+## What is fixed (app 2.12.2, served from this release)
+- The session cookie is now read on the **main thread** (inside
+  onStartJob, where it is legal) and only the HTTP request runs on the
+  background thread.
+- The entire job now catches `Throwable` and records it instead of ever
+  crashing the process — the job physically cannot kill the app again.
+- The notification/job scheduling in MainActivity is also guarded.
+- **New: crash reporting.** If anything ever crashes the app again,
+  the stack trace is saved and shown on the next launch with a
+  **Copy report** button — so it can be pasted into a bug report
+  without USB debugging.
+
+Server code is unchanged (version bump only): update with
+`docker compose pull && docker compose up -d`, then download the new
+app APK from a browser on the phone (the site → Settings ⚙️ → About →
+⬇ Download) and install it over the broken one — same signing key.
+
 # v2.12.2 — Fix: the update button did nothing on the old app
 
 ## What was wrong

@@ -1,6 +1,7 @@
 package win.strommingflix.eft;
 
 import android.Manifest;
+import android.app.AlertDialog;
 import android.app.Activity;
 import android.app.DownloadManager;
 import android.content.Intent;
@@ -8,6 +9,8 @@ import android.content.pm.PackageManager;
 import android.content.SharedPreferences;
 import android.app.job.JobInfo;
 import android.app.job.JobScheduler;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.ComponentName;
 import android.os.Build;
 import android.net.Uri;
@@ -42,6 +45,16 @@ import android.widget.Toast;
  * the system DownloadManager, so the web UI's "Download update" link
  * downloads the new APK and tapping the system notification opens the
  * installer (installs over the current app; same signing key).
+ *
+ * v2.12.2: crash fix — the background poll job (v2.12.0+) read the
+ * WebView session cookie from its worker thread, which could throw an
+ * Error on some devices and kill the whole app process; because the
+ * job is persisted, Android re-delivered it the moment the app was
+ * opened, so the app would close immediately and could not be opened
+ * again (reinstall does not clear the job). The cookie is now read on
+ * the main thread and the job catches Throwable everywhere (see
+ * PollJobService). Also: CrashLog records any uncaught exception and
+ * the app shows it on the next launch with a Copy button.
  */
 public class MainActivity extends Activity {
 
@@ -50,7 +63,7 @@ public class MainActivity extends Activity {
     private static final int JOB_ID = 1;
     private static final String PREFS = "eft";
     private static final String KEY_URL = "server_url";
-    private static final String APP_VERSION = "2.12.1";
+    private static final String APP_VERSION = "2.12.2";
     // Custom deep-link scheme: an OIDC flow that somehow ends up in the
     // browser redirects back into the app via win.strommingflix.eft://…
     private static final String DL_SCHEME = "win.strommingflix.eft";
@@ -62,6 +75,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        CrashLog.install(this);   // record crashes for the report dialog
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         serverUrl = prefs.getString(KEY_URL, null);
         if (serverUrl == null || serverUrl.isEmpty()) showSetup();
@@ -72,6 +86,31 @@ public class MainActivity extends Activity {
                 != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_CAMERA);
         }
+        maybeShowCrashReport();
+    }
+
+    /**
+     * v2.12.2: if the app (or its background job) crashed since the last
+     * launch, show the stack trace with a Copy button so it can be
+     * reported without USB debugging.
+     */
+    private void maybeShowCrashReport() {
+        final String crash = CrashLog.get(this);
+        if (crash == null) return;
+        AlertDialog.Builder b = new AlertDialog.Builder(this);
+        b.setTitle("The app crashed last time");
+        b.setMessage(crash);
+        b.setPositiveButton("Copy report", (d, w) -> {
+            try {
+                ClipboardManager cm = getSystemService(ClipboardManager.class);
+                cm.setPrimaryClip(ClipData.newPlainText("EFT crash report", crash));
+                Toast.makeText(this, "Crash report copied — you can now " +
+                        "paste it into a bug report.", Toast.LENGTH_LONG).show();
+            } catch (Throwable ignored) { }
+        });
+        b.setNeutralButton("Dismiss", (d, w) -> CrashLog.clear(this));
+        b.setOnCancelListener(d -> CrashLog.clear(this));
+        b.show();
     }
 
     @Override
@@ -179,7 +218,7 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         // Token used by the web app to enable the scan buttons.
-        s.setUserAgentString(s.getUserAgentString() + " EFT-Android/2.12.1");
+        s.setUserAgentString(s.getUserAgentString() + " EFT-Android/2.12.2");
 
         web.setWebViewClient(new WebViewClient() {
             @Override
@@ -253,7 +292,11 @@ public class MainActivity extends Activity {
         web.loadUrl(serverUrl);
         setContentView(web, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        enableNativeNotifications();
+        try {
+            enableNativeNotifications();
+        } catch (Throwable t) {
+            CrashLog.store(this, t);   // scheduling must never kill startup
+        }
     }
 
     /**
