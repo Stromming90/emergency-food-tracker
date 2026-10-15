@@ -1,8 +1,20 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.10.0)
+Emergency Food Storage Tracker — Web UI server (v2.10.1)
 =====================================================
 Zero-dependency web server (Python stdlib only).
+
+v2.10.1:
+- The separate Barcodes tab is gone: barcode data now lives in the
+  Products tab. /api/data products each carry their "barcodes" list,
+  the product list has a filterable Barcode column (add/remove behind
+  the Edit button, global admin), and the country barcode list import
+  moved from Settings to a card in the Products tab.
+- Notifications fixed on the phone app: the Android WebView never
+  grants the Notification permission, so alerts there (and anywhere
+  permission is missing) now also use an in-app banner + vibration.
+- The downloadable APK is always named after the current version
+  (app-version.txt -> 2.10.1) even though the app binary is unchanged.
 
 v2.10:
 - Pure UI reorganisation; the only server change is the version bump:
@@ -834,7 +846,17 @@ def inventory_view(household):
 
 
 def products_view():
-    return read_csv(PRODUCTS_CSV)
+    """Global product list, each product with its mapped barcodes (v2.10.1)."""
+    products = read_csv(PRODUCTS_CSV)
+    by_prod = {}
+    for code, v in get_config().get("barcodes", {}).items():
+        key = (str(v.get("name", "")).lower(),
+               str(v.get("manufacturer", "")).lower())
+        by_prod.setdefault(key, []).append(code)
+    for p in products:
+        p["barcodes"] = by_prod.get(
+            (p.get("name", "").lower(), p.get("manufacturer", "").lower()), [])
+    return products
 
 
 # ======================= HTTP =======================
@@ -1016,7 +1038,7 @@ class Handler(BaseHTTPRequestHandler):
                     "oidc_enabled": oidc_enabled(),
                     "password_login": password_login_enabled(),
                     "oidc_name": get_config()["oidc"].get("name") or "SSO",
-                    "version": "2.10.0",
+                    "version": "2.10.1",
                     "user": ({**user_public(user),
                               "api_key": user.get("api_key", ""),
                               "visible_households": user_households(user) if not is_global_admin(user)
@@ -1594,7 +1616,7 @@ def main():
     get_users()   # normalizes roles + generates per-user API keys
     get_config()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.10.0: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v2.10.1: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 
