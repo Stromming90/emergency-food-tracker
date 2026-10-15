@@ -1,3 +1,26 @@
+# v2.12.1 — Download the app from the web & update it from inside the app
+
+## Find the app from the website
+- **Settings → About** now exists: server/app version info and a big
+  **Download Android app** button (serves the current APK from
+  `/app.apk`, always the latest version built by CI).
+- Android **browsers** (not the app) get a dismissible banner under
+  the header: "Get the Android app" with a one-tap Download button.
+
+## Update the app from inside the app
+- Every time the app opens, it compares its own version (the
+  `EFT-Android/<version>` user-agent token) with the APK version
+  bundled on the server (`/app-version.txt`). When the server has a
+  newer one, a **"App update available"** banner appears at the top
+  with a Download button — also in Settings → About.
+- The app update (v2.12.1) handles the download **in-app** through the
+  system download manager: tap the notification when it finishes and
+  Android opens the installer. Installs over the current app (same
+  signing key) — server address, session and settings are kept.
+- The currently installed v2.12.0 app has no download handler, so on
+  that version the download link opens the **browser**, which
+  downloads and installs the APK the normal way.
+
 # v2.12.0 — Notifications from the Android app itself
 
 ## Native notifications in the APK app

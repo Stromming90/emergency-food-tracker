@@ -35,6 +35,12 @@
            padding: 8px 16px; }
   button:hover { background: var(--accent2); }
   button.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .app-banner { display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+                background: var(--border); border: 1px solid var(--accent);
+                border-radius: 10px; padding: 8px 12px; margin: 4px 0 10px;
+                font-size: .85rem; }
+  .app-banner button { padding: 5px 12px; font-size: .82rem; }
+  .app-banner .spacer { flex: 1; }
   .msg { min-height: 20px; font-size: .85rem; margin-top: 8px; }
   .msg.error { color: var(--warn1); }
   .msg.ok { color: var(--ok); }
@@ -179,6 +185,14 @@
     <button class="iconbtn" id="b-logout" title="Log out">⏻</button>
   </div>
   <p class="sub" id="today"></p>
+
+  <!-- Android app banner (v2.12.1): install link on phones, update notice in the app -->
+  <div class="app-banner" id="app-banner" hidden>
+    <span id="app-banner-text"></span>
+    <span class="spacer"></span>
+    <button id="app-banner-dl" class="ghost">Download</button>
+    <button id="app-banner-x" class="ghost" title="Dismiss">✕</button>
+  </div>
 
   <div class="main-tabs" id="main-tabs">
     <button data-tab="household" class="active">🏠 Household</button>
@@ -445,6 +459,7 @@
       <button data-tab="auth" id="tab-auth">Authentication</button>
       <button data-tab="notifications">Notifications</button>
       <button data-tab="apikey">API Key</button>
+      <button data-tab="about">About</button>
     </div>
 
     <!-- ============ General tab ============ -->
@@ -601,6 +616,24 @@
         <button id="apikey-regen" class="ghost">Regenerate API key</button>
       </div>
       <div class="msg" id="msg-apikey"></div>
+    </div>
+
+    <!-- ============ About tab ============ -->
+    <div class="tabpane" data-pane="about" hidden>
+      <h3 style="margin:0 0 6px">About</h3>
+      <p class="muted" id="about-versions" style="margin:4px 0"></p>
+
+      <h3 style="margin:14px 0 4px">📱 Android app</h3>
+      <p class="muted" id="about-app-text" style="margin:4px 0"></p>
+      <div class="row" style="margin-top:6px">
+        <button id="app-download">⬇ Download Android app</button>
+      </div>
+      <p class="muted" style="margin:6px 0 0">The APK installs over an
+      existing installation (same signing key) — your server address,
+      login session and settings are kept. Android may ask you to
+      confirm the install; that is expected for any APK installed
+      outside the Play Store.</p>
+      <div class="msg" id="msg-about"></div>
     </div>
   </div>
 </div>
@@ -817,6 +850,7 @@ function showApp() {
   if (!vhh.includes(HH)) HH = vhh[0] || '';
   if (HH) sel.value = HH;
   load();
+  checkAppUpdate();
 }
 
 async function boot() {
@@ -1095,6 +1129,114 @@ $('f-buy').addEventListener('submit', async e => {
 
 // ---------- barcode scanning (Android app only) ----------
 const IN_APP = /EFT-Android/i.test(navigator.userAgent);
+// Version of the installed app, from the EFT-Android/<version> UA token.
+const APP_VER = (() => {
+  const m = navigator.userAgent.match(/EFT-Android\/(\d+(?:\.\d+)*)/i);
+  return m ? m[1] : null;
+})();
+
+// ---------- Android app: install link & update check (v2.12.1) ----------
+function cmpVer(a, b) {           // returns -1 / 0 / 1
+  const p = v => String(v).split('.').map(Number);
+  const A = p(a), B = p(b);
+  for (let i = 0; i < Math.max(A.length, B.length); i++) {
+    const d = (A[i] || 0) - (B[i] || 0);
+    if (d) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}
+
+// The first app version that can download updates in-app (WebView
+// DownloadListener → DownloadManager). Older apps are bounced through
+// the browser via an intent:// URL instead.
+const FIRST_IN_APP_UPDATE = '2.12.1';
+
+function apkUrlViaBrowser() {
+  // intent:// URL — the app's shouldOverrideUrlLoading hands it to
+  // ACTION_VIEW, Android opens the browser on the APK URL, and the
+  // browser downloads and offers the install. Works on app v2.12.0.
+  const proto = location.protocol === 'https:' ? 'https' : 'http';
+  return `intent://${location.host}/app.apk#Intent;scheme=${proto};` +
+         'action=android.intent.action.VIEW;end';
+}
+
+function downloadAppApk() {
+  if (IN_APP && APP_VER && cmpVer(APP_VER, FIRST_IN_APP_UPDATE) < 0) {
+    // Old app without a download handler: go via the browser.
+    location.href = apkUrlViaBrowser();
+    return;
+  }
+  location.href = '/app.apk';   // browser: download; new app: DownloadManager
+}
+
+let SERVER_APP_VER = null;      // APK version bundled on the server
+
+function showAppBanner(kind, serverVer) {
+  const b = $('app-banner'), t = $('app-banner-text'), dl = $('app-banner-dl');
+  if (kind === 'update') {
+    t.innerHTML = `🔄 <b>App update available</b> — v${esc(serverVer)} ` +
+      `(this app is v${esc(APP_VER)}). Install it over the current app to stay up to date.`;
+    dl.textContent = 'Download update';
+  } else {
+    t.innerHTML = '📱 <b>Get the Android app</b> — scan barcodes with the ' +
+      'camera and get notifications even when the app is closed.';
+    dl.textContent = 'Download app';
+  }
+  b.hidden = false;
+}
+
+async function checkAppUpdate() {
+  if (IN_APP && APP_VER) {
+    // In the app: compare the installed version with the server's APK.
+    try {
+      const r = await fetch('/app-version.txt', { cache: 'no-store' });
+      const v = (await r.text()).trim();
+      if (v && cmpVer(v, APP_VER) > 0) {
+        SERVER_APP_VER = v;
+        showAppBanner('update', v);
+      }
+    } catch (e) { /* offline / older server: never mind */ }
+  } else if (/Android/i.test(navigator.userAgent) &&
+             !localStorage.getItem('appBannerDismissed')) {
+    // Android browser (not the app): offer the install once.
+    showAppBanner('install');
+  }
+}
+
+function refreshAboutTab() {
+  const info = BOOT && BOOT.version ? `Server: v${esc(BOOT.version)}` : 'Server';
+  const appBit = IN_APP && APP_VER
+    ? (SERVER_APP_VER && cmpVer(SERVER_APP_VER, APP_VER) > 0
+        ? ` · App: v${esc(APP_VER)} (v${esc(SERVER_APP_VER)} available!)`
+        : ` · App: v${esc(APP_VER)} (up to date ✓)`)
+    : ' · App: not installed';
+  $('about-versions').textContent = info + appBit;
+  const btn = $('app-download');
+  if (IN_APP && APP_VER && cmpVer(APP_VER, FIRST_IN_APP_UPDATE) >= 0) {
+    $('about-app-text').textContent = 'Download the latest version of the ' +
+      'app from this server. The download is handled by the system ' +
+      'download manager; tap the notification when it completes to install.';
+  } else if (IN_APP && APP_VER) {
+    $('about-app-text').textContent = 'Download the latest version of the ' +
+      'app. Your current app version opens the download in the browser — ' +
+      'install it over the app as usual.';
+  } else {
+    $('about-app-text').textContent = 'A tiny app that wraps this website ' +
+      'with native notifications and camera barcode scanning. Download it, ' +
+      'open the APK, and point it at this server.';
+  }
+  btn.textContent = (IN_APP && APP_VER && SERVER_APP_VER &&
+                     cmpVer(SERVER_APP_VER, APP_VER) > 0)
+    ? `⬇ Download update (v${SERVER_APP_VER})` : '⬇ Download Android app';
+}
+
+$('app-download').addEventListener('click', downloadAppApk);
+$('app-banner-dl').addEventListener('click', downloadAppApk);
+$('app-banner-x').addEventListener('click', () => {
+  $('app-banner').hidden = true;
+  if (!IN_APP) localStorage.setItem('appBannerDismissed', '1');
+});
+
 let scanStream = null, scanLoop = false;
 
 async function handleBarcode(code) {
@@ -1422,6 +1564,7 @@ $('settings-tabs').addEventListener('click', e => {
     b.classList.toggle('active', b === e.target));
   document.querySelectorAll('#settings-modal .tabpane').forEach(p =>
     p.hidden = p.dataset.pane !== e.target.dataset.tab);
+  if (e.target.dataset.tab === 'about') refreshAboutTab();
 });
 function showTab(name) {
   document.querySelector(`#settings-tabs button[data-tab="${name}"]`).click();
@@ -1797,9 +1940,10 @@ async function refreshPushState() {
   $('push-disable').hidden = !enabledHere;
   if (IN_APP) {
     st.textContent = 'Notifications on this device are handled by the ' +
-      'Android app itself: update the app to v2.12.0 or later (Settings → ' +
-      'About → download) and allow notifications when prompted. Alerts ' +
-      'then arrive as system notifications, even when the app is closed.';
+      'Android app itself: allow notifications when prompted and they ' +
+      'arrive as system notifications, even when the app is closed. The ' +
+      'app checks for updates every time you open it — see the banner ' +
+      'above, or Settings → About → Download.';
   } else if (!PUSH_SUPPORTED) {
     st.textContent = 'Push notifications are not available in this ' +
       'browser. Open the tracker in Chrome or Firefox — or add it to ' +

@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.12.0)
+Emergency Food Storage Tracker — Web UI server (v2.12.1)
 =====================================================
 Zero-dependency web server (Python stdlib only).
+
+v2.12.1:
+- Android app discoverability & updates: the web UI now has a
+  Settings -> About tab with the APK download, a dismissible
+  "Get the Android app" banner for Android browsers, and — inside
+  the app — an automatic update check that compares the app's
+  EFT-Android/<version> user-agent token against app/app-version.txt
+  and shows a "Download update" banner. The app (v2.12.1+) downloads
+  the update in-app via the system DownloadManager; the older
+  v2.12.0 app is bounced through the browser with an intent:// URL.
 
 v2.12.0:
 - Native push notifications for the Android APK app itself: the app
@@ -1497,7 +1507,7 @@ class Handler(BaseHTTPRequestHandler):
                     "oidc_enabled": oidc_enabled(),
                     "password_login": password_login_enabled(),
                     "oidc_name": get_config()["oidc"].get("name") or "SSO",
-                    "version": "2.12.0",
+                    "version": "2.12.1",
                     "user": ({**user_public(user),
                               "api_key": user.get("api_key", ""),
                               "visible_households": user_households(user) if not is_global_admin(user)
@@ -2197,7 +2207,7 @@ def main():
     # v2.11: background web-push checker (daemon)
     threading.Thread(target=push_loop, daemon=True).start()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.12.0: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v2.12.1: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 

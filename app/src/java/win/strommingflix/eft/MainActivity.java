@@ -2,6 +2,7 @@ package win.strommingflix.eft;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.DownloadManager;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.SharedPreferences;
@@ -36,6 +37,11 @@ import android.widget.Toast;
  * v2.12.0: native notifications — a periodic JobScheduler job
  * (PollJobService) polls the server for expiring items and raises
  * system notifications even when the app is closed.
+ *
+ * v2.12.1: in-app updates — a DownloadListener hands APK downloads to
+ * the system DownloadManager, so the web UI's "Download update" link
+ * downloads the new APK and tapping the system notification opens the
+ * installer (installs over the current app; same signing key).
  */
 public class MainActivity extends Activity {
 
@@ -44,7 +50,7 @@ public class MainActivity extends Activity {
     private static final int JOB_ID = 1;
     private static final String PREFS = "eft";
     private static final String KEY_URL = "server_url";
-    private static final String APP_VERSION = "2.12.0";
+    private static final String APP_VERSION = "2.12.1";
     // Custom deep-link scheme: an OIDC flow that somehow ends up in the
     // browser redirects back into the app via win.strommingflix.eft://…
     private static final String DL_SCHEME = "win.strommingflix.eft";
@@ -173,7 +179,7 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         // Token used by the web app to enable the scan buttons.
-        s.setUserAgentString(s.getUserAgentString() + " EFT-Android/2.12.0");
+        s.setUserAgentString(s.getUserAgentString() + " EFT-Android/2.12.1");
 
         web.setWebViewClient(new WebViewClient() {
             @Override
@@ -190,6 +196,39 @@ public class MainActivity extends Activity {
                 return true;
             }
         });
+        // v2.12.1: the web UI points update links at /app.apk — handle
+        // the download here (a WebView without a DownloadListener would
+        // just do nothing). Hand it to the system DownloadManager: no
+        // permissions needed, the system shows progress and, for APKs,
+        // tapping the completed notification opens the package installer.
+        web.setDownloadListener((url, userAgent, contentDisposition,
+                                 mimeType, contentLength) -> {
+            try {
+                DownloadManager.Request req =
+                        new DownloadManager.Request(Uri.parse(url));
+                req.setMimeType(mimeType != null ? mimeType
+                        : "application/vnd.android.package-archive");
+                req.setTitle("Food Tracker update");
+                req.setDescription("App update");
+                req.setNotificationVisibility(
+                        DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                String cookies = CookieManager.getInstance().getCookie(url);
+                if (cookies != null) req.addRequestHeader("Cookie", cookies);
+                DownloadManager dm = (DownloadManager)
+                        getSystemService(DOWNLOAD_SERVICE);
+                dm.enqueue(req);
+                Toast.makeText(MainActivity.this,
+                        "Downloading — tap the notification when it " +
+                        "finishes to install.", Toast.LENGTH_LONG).show();
+            } catch (Exception e) {
+                // If the system download manager refuses (unknown
+                // reasons), fall back to the browser.
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+                } catch (Exception ignored) { }
+            }
+        });
+
         web.setWebChromeClient(new WebChromeClient() {
             @Override
             public void onPermissionRequest(final PermissionRequest request) {
