@@ -1,38 +1,50 @@
-# v2.10.2 — Hotfix: real push notifications, even when the app is closed
+# v2.11.0 — One-tap push notifications, zero configuration
 
-## Push notifications to your phone (server-side)
-The v2.10.1 alerts only appeared inside the app while it was open. This
-hotfix adds **true push notifications**:
+## Both old notification systems replaced by real Web Push
+The in-app banner alerts (v2.10.1) and the ntfy / Gotify / Pushover
+integration (v2.10.2) are gone. In their place: **standard Web Push
+notifications** — the same technology big services use, built into
+every modern browser.
 
-- A background checker on the **server** scans every household about
-  **every six hours** and pushes an alert when any item changes status
-  tag — "Less than 6 months", "Less than 3 months", "Less than 1
-  month" or "Expired".
-- Pushes arrive on your phone's notification screen **even when the
-  app is not open** — no app changes needed, the WebView wrapper stays
-  as it is.
-- Alerts are delivered through the push service of your choice, set up
-  in **Settings → Notifications → Push notifications (server)**
-  (global admin only):
-  - **ntfy** (recommended, free & open source): install the
-    [ntfy app](https://ntfy.sh), pick a secret topic, subscribe to it
-    on your phone and paste the topic URL (e.g.
-    `https://ntfy.sh/my-secret-topic`) into the tracker.
-  - **Gotify**: paste your Gotify server URL and an application token.
-  - **Pushover**: paste your app token and user key from pushover.net.
-- **Send test push** verifies the setup immediately; the first regular
-  check establishes the baseline, and alerts start from the next
-  status change.
-- The in-app banner alerts from v2.10.1 remain for when the app is
-  open. The server URL field also accepts a self-hosted ntfy server.
+- **No third-party apps, no accounts, no URLs, no tokens.** The server
+  generates its own VAPID encryption keys automatically on first
+  start; your browser's built-in push service handles delivery.
+- **One tap to enable** on each device: Settings → Notifications →
+  "Enable notifications on this device". Each user manages their own
+  devices (no longer global-admin-only).
+- **Alerts arrive on your phone's notification screen even when the
+  app is closed.** The server checks all households about every six
+  hours and pushes an alert when an item's status tag worsens
+  ("Less than 6 months" → "Less than 3 months" → "Less than 1 month"
+  → "Expired"). The first check only sets the baseline.
+- **"Send test notification"** button to verify a device immediately.
+- Expired subscriptions are pruned automatically (HTTP 404/410).
 
-## Mobile app
-The downloadable APK is always named after the current version — with
-this update it is served as **emergency-food-tracker-2.10.2.apk** —
-even though the app binary is unchanged. The app is a thin WebView
-wrapper: this hotfix arrives through the web UI the moment the server
-is updated, so **no reinstall is needed**. (The push notifications are
-sent by the server to the ntfy/Gotify/Pushover app on your phone,
-which is why they work without touching the WebView app at all.)
+## Inside the APK app (WebView)
+The Android WebView cannot receive Web Push (an OS limitation for any
+wrapped site — it needs the browser's push infrastructure). Inside
+the APK the Notifications tab says so; open the tracker in **Chrome or
+Firefox on your phone** — or add it to your home screen — and enable
+notifications there. They then arrive like any app's notifications,
+even when the browser is closed. No reinstall is needed; the APK
+binary is unchanged and is only re-named (`app-version.txt` → 2.11.0).
 
-Web app version: 2.10.2.
+## Technical
+- New endpoints: `GET /api/push/vapid`, `GET /api/push/status`,
+  `POST /api/push/subscribe`, `POST /api/push/unsubscribe`,
+  `POST /api/push/test`. Removed: `GET/POST /api/admin/push`,
+  `POST /api/admin/push/test`.
+- New file `static/sw.js` (service worker), served at `/sw.js` with
+  `Service-Worker-Allowed: /`.
+- The server is still **zero-dependency Python stdlib**: the required
+  P-256 ECDH/ECDSA, HKDF and AES-128-GCM primitives are implemented
+  in `server.py` itself, and validated at every startup against the
+  FIPS-197 AES test vector and the complete RFC 8291 §5 example
+  (plus OpenSSL cross-checks during development).
+- Background check interval configurable via `PUSH_CHECK_SECONDS`
+  (default 21600 = 6 h).
+
+## Upgrade
+`docker compose pull && docker compose up -d` — then tap "Enable
+notifications on this device" in Settings → Notifications on each
+device.

@@ -1,8 +1,34 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.10.2)
+Emergency Food Storage Tracker — Web UI server (v2.11.0)
 =====================================================
 Zero-dependency web server (Python stdlib only).
+
+v2.11.0:
+- BOTH old notification options removed (the v2.10.1 in-app banner
+  alerts and the v2.10.2 ntfy/Gotify/Pushover server push). Replaced
+  by ONE zero-configuration system: standard Web Push notifications
+  (RFC 8030/8291/8292). No third-party apps, no accounts, no URLs or
+  tokens to paste — the server auto-generates its VAPID key pair and
+  each user enables notifications per device with one tap in
+  Settings -> Notifications. Delivery goes through the browser's
+  built-in push service; alerts appear on the phone's notification
+  screen even when the app is closed.
+- All required crypto (P-256 ECDH/ECDSA, HKDF, AES-128-GCM) lives in
+  this file, pure Python stdlib — the zero-dependency property of the
+  server is preserved. Validated against the FIPS-197 AES vector and
+  the complete RFC 8291 example, re-checked at every startup.
+- The background checker still runs about every six hours
+  (PUSH_CHECK_SECONDS); each subscriber gets an alert for the
+  households they can see when an item's status tag worsens. The
+  first run only establishes the baseline. Expired subscriptions
+  (HTTP 404/410) are pruned automatically.
+- New endpoints: GET /api/push/vapid, GET /api/push/status,
+  POST /api/push/subscribe, POST /api/push/unsubscribe,
+  POST /api/push/test. Removed: GET/POST /api/admin/push and
+  POST /api/admin/push/test. New static file sw.js (the service
+  worker that displays the notifications), served at /sw.js with
+  "Service-Worker-Allowed: /".
 
 v2.10.2:
 - Real push notifications: a background checker on the server (about
@@ -128,7 +154,7 @@ USERS_FILE = os.path.join(CONFIG_DIR, "users.json")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 PRODUCTS_CSV = os.path.join(DATA_DIR, "products.csv")   # global product list
 PORT = int(os.environ.get("PORT", "4500"))
-# v2.10.2: how often the background push checker runs (seconds)
+# v2.11: how often the background web-push checker runs (seconds)
 PUSH_CHECK_SECONDS = int(os.environ.get("PUSH_CHECK_SECONDS", "21600"))
 
 # v2.4.2: outbound OIDC requests use a browser-like User-Agent so that
@@ -269,9 +295,14 @@ def get_config():
     auth.setdefault("password_login", True)   # v2.5: password login toggle
     cfg.setdefault("barcodes", {})            # v2.7: barcode -> product mappings
     cfg.setdefault("barcode_imports", {})    # v2.9: imported country lists
-    cfg.setdefault("push", {"enabled": False, "service": "ntfy",
-                            "url": "", "token": "", "user": ""})
-    # v2.10.2 push default
+    # v2.11: web push subscriptions + auto-generated VAPID key pair.
+    # Zero configuration: keys are created on first start, kept in
+    # config.json, and the public key is handed to browsers on demand.
+    cfg.setdefault("push_subs", [])
+    if not cfg.get("vapid_priv"):
+        _vpriv = secrets.randbelow(WP_N - 1) + 1
+        cfg["vapid_priv"] = b64u_encode(_vpriv.to_bytes(32, "big"))
+        cfg["vapid_pub"] = b64u_encode(wp_point_raw(wp_pubkey(_vpriv)))
     save_json(CONFIG_FILE, cfg)
     return cfg
 
@@ -875,7 +906,16 @@ def products_view():
     return products
 
 
-# ======================= push notifications (v2.10.2) =======================
+# ======================= web push notifications (v2.11) =======================
+#
+# Zero-configuration push notifications via the standard Web Push
+# protocol (RFC 8030 + RFC 8291 encryption + RFC 8292 VAPID auth).
+# Delivery goes through the browser's built-in push service: the user
+# never installs a third-party app, creates an account, or pastes a
+# token. All crypto below is pure Python stdlib (P-256 ECDH/ECDSA,
+# HKDF, AES-128-GCM) so the server keeps its zero-dependency design.
+# The primitives are validated at startup against the FIPS-197 AES
+# test vector and the complete RFC 8291 section 5 example.
 
 PUSH_LEVEL_TEXT = {"ok": "fine", "6months": "less than 6 months",
                    "3months": "less than 3 months",
@@ -883,63 +923,310 @@ PUSH_LEVEL_TEXT = {"ok": "fine", "6months": "less than 6 months",
 PUSH_RANK = {"ok": 0, "6months": 1, "3months": 2, "1month": 3, "expired": 4}
 
 
-def send_push(push, title, body):
-    """Send one push notification via the configured service.
+#!/usr/bin/env python3
+"""Web Push crypto primitives, pure Python stdlib.
+Validated against FIPS-197 AES-128, the full RFC 8291 §5/Appendix WP_A vector,
+and OpenSSL (via Node crypto) GCM oracle samples."""
+import base64, hashlib, hmac, secrets
 
-    Returns (ok, error). Supported services:
-      ntfy     - url is the topic URL (e.g. https://ntfy.sh/my-topic)
-      gotify   - url is the server root, token is the application token
-      pushover - token is the app token, user is the user key
+
+# ---------------- WP_P-256 (secp256r1) ----------------
+WP_P = 0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF
+WP_A = WP_P - 3
+WP_G = (0x6B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296,
+     0x4FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5)
+WP_N = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
+
+
+def _wp_add(p, q):
+    if p is None:
+        return q
+    if q is None:
+        return p
+    x1, y1 = p
+    x2, y2 = q
+    if x1 == x2:
+        if (y1 + y2) % WP_P == 0:
+            return None
+        lam = (3 * x1 * x1 + WP_A) * pow(2 * y1, -1, WP_P) % WP_P
+    else:
+        lam = (y2 - y1) * pow(x2 - x1, -1, WP_P) % WP_P
+    x3 = (lam * lam - x1 - x2) % WP_P
+    return x3, (lam * (x1 - x3) - y1) % WP_P
+
+
+def _wp_mul(k, p):
+    r = None
+    while k:
+        if k & 1:
+            r = _wp_add(r, p)
+        p = _wp_add(p, p)
+        k >>= 1
+    return r
+
+
+def wp_pubkey(priv):
+    return _wp_mul(priv, WP_G)
+
+
+def wp_point_raw(pt):
+    return b"\x04" + pt[0].to_bytes(32, "big") + pt[1].to_bytes(32, "big")
+
+
+def wp_point_from_raw(raw):
+    if len(raw) != 65 or raw[0] != 4:
+        raise ValueError("Bad WP_P-256 public key.")
+    return int.from_bytes(raw[1:33], "big"), int.from_bytes(raw[33:65], "big")
+
+
+def b64u_encode(b):
+    return base64.urlsafe_b64encode(b).decode().rstrip("=")
+
+
+def b64u_decode(s):
+    s = str(s).strip()
+    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+
+
+# ---------------- AES-128 ----------------
+def _wp_gmul(a, b):
+    r = 0
+    for _ in range(8):
+        if b & 1:
+            r ^= a
+        hi = a & 0x80
+        a = (a << 1) & 0xFF
+        if hi:
+            a ^= 0x1B
+        b >>= 1
+    return r
+
+
+def _wp_make_sbox():
+    log, alog, x = [0] * 256, [0] * 512, 1
+    for i in range(255):
+        alog[i] = x
+        log[x] = i
+        x = _wp_gmul(x, 3)
+    for i in range(255, 512):
+        alog[i] = alog[i - 255]
+    sbox = [0x63] * 256
+    for a in range(1, 256):
+        inv = alog[255 - log[a]]
+        s, r = inv, inv
+        for _ in range(4):
+            r = ((r << 1) | (r >> 7)) & 0xFF
+            s ^= r
+        sbox[a] = s ^ 0x63
+    return sbox
+
+
+WP_SBOX = _wp_make_sbox()
+WP_RCON = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1B, 0x36]
+
+
+def _wp_xt(a):
+    a <<= 1
+    return (a ^ 0x1B) & 0xFF if a & 0x100 else a
+
+
+def wp_aes_expand(key):
+    w = [list(key[0:4]), list(key[4:8]), list(key[8:12]), list(key[12:16])]
+    for i in range(4, 44):
+        t = list(w[i - 1])
+        if i % 4 == 0:
+            t = t[1:] + t[:1]
+            t = [WP_SBOX[b] for b in t]
+            t[0] ^= WP_RCON[i // 4 - 1]
+        w.append([x ^ y for x, y in zip(w[i - 4], t)])
+    return [w[4 * r] + w[4 * r + 1] + w[4 * r + 2] + w[4 * r + 3] for r in range(11)]
+
+
+def wp_aes_block(rk, b):
+    s = [b[i] ^ rk[0][i] for i in range(16)]
+    for rnd in range(1, 11):
+        s = [WP_SBOX[c] for c in s]
+        s = [s[0], s[5], s[10], s[15], s[4], s[9], s[14], s[3],
+             s[8], s[13], s[2], s[7], s[12], s[1], s[6], s[11]]
+        if rnd < 10:
+            t = []
+            for c in range(0, 16, 4):
+                a = s[c:c + 4]
+                t += [(_wp_xt(a[0]) ^ _wp_xt(a[1]) ^ a[1]) ^ a[2] ^ a[3],
+                      a[0] ^ (_wp_xt(a[1]) ^ _wp_xt(a[2]) ^ a[2]) ^ a[3],
+                      a[0] ^ a[1] ^ (_wp_xt(a[2]) ^ _wp_xt(a[3]) ^ a[3]),
+                      (_wp_xt(a[3]) ^ _wp_xt(a[0]) ^ a[0]) ^ a[1] ^ a[2]]
+            s = t
+        s = [s[i] ^ rk[rnd][i] for i in range(16)]
+    return bytes(s)
+
+
+# ---------------- AES-128-GCM ----------------
+def _wp_gf128(x, y):
+    """GHASH block multiplication (SP 800-38D Algorithm 1; MSB = x^0,
+    LSB = x^127, field poly 1 + a + a^2 + a^7 + a^128)."""
+    R = 0xE1 << 120
+    res = 0
+    for i in range(127, -1, -1):
+        if (y >> i) & 1:
+            res ^= x
+        x = (x >> 1) ^ ((x & 1) * R)
+    return res
+
+
+def wp_gcm_encrypt(key, nonce12, data):
+    """AES-128-GCM encrypt with no AAD; returns (ct, tag)."""
+    rk = wp_aes_expand(key)
+    h = int.from_bytes(wp_aes_block(rk, b"\x00" * 16), "big")
+    j0 = nonce12 + b"\x00\x00\x00\x01"
+    ctr = int.from_bytes(j0, "big") + 1
+    ct = bytearray()
+    for i in range(0, len(data), 16):
+        ks = wp_aes_block(rk, ctr.to_bytes(16, "big"))
+        ctr += 1
+        ct += bytes(x ^ y for x, y in zip(data[i:i + 16], ks))
+    # GHASH over ciphertext (no AAD), then the length block (0-bit AAD len)
+    y = 0
+    for i in range(0, len(ct), 16):
+        y = _wp_gf128(y ^ int.from_bytes(bytes(ct[i:i + 16]).ljust(16, b"\x00"), "big"), h)
+    y = _wp_gf128(y ^ (len(ct) << 3), h)
+    tag = bytes(x ^ y for x, y in zip(wp_aes_block(rk, j0), y.to_bytes(16, "big")))
+    return bytes(ct), tag
+
+
+# ---------------- ECDSA (ES256, RFC 8292 VAPID) ----------------
+def wp_es256_sign(priv, msg):
+    h = int.from_bytes(hashlib.sha256(msg).digest(), "big")
+    while True:
+        k = secrets.randbelow(WP_N - 1) + 1
+        R = _wp_mul(k, WP_G)
+        r = R[0] % WP_N
+        if r == 0:
+            continue
+        s = pow(k, -1, WP_N) * (h + r * priv) % WP_N
+        if s != 0:
+            return r.to_bytes(32, "big") + s.to_bytes(32, "big")
+
+
+def wp_es256_verify(pub_raw, msg, sig):
+    r = int.from_bytes(sig[:32], "big")
+    s = int.from_bytes(sig[32:64], "big")
+    h = int.from_bytes(hashlib.sha256(msg).digest(), "big")
+    Q = wp_point_from_raw(pub_raw)
+    w = pow(s, -1, WP_N)
+    u1 = h * w % WP_N
+    u2 = r * w % WP_N
+    pt = _wp_add(_wp_mul(u1, WP_G), _wp_mul(u2, Q))
+    return pt is not None and pt[0] % WP_N == r
+
+
+# ---------------- RFC 8291 message encryption ----------------
+def _wp_hkdf_info(prk_key, info):
+    return hmac.new(prk_key, info + b"\x01", hashlib.sha256).digest()
+
+
+def wp_encrypt_payload(ua_pub_raw, auth_secret, plaintext, as_priv=None, salt=None):
+    """RFC 8291 aes128gcm encryption. Returns the full body (header+ct+tag).
+    as_priv/salt can be fixed for tests."""
+    ua = wp_point_from_raw(ua_pub_raw)
+    if as_priv is None:
+        as_priv = secrets.randbelow(WP_N - 1) + 1
+    as_pt = wp_pubkey(as_priv)
+    as_raw = wp_point_raw(as_pt)
+    ecdh = _wp_mul(as_priv, ua)
+    ecdh_secret = ecdh[0].to_bytes(32, "big")
+    # PRK_key = HKDF-Extract(auth_secret, ecdh_secret)
+    prk_key = hmac.new(auth_secret, ecdh_secret, hashlib.sha256).digest()
+    # IKM = HKDF-Expand(PRK_key, key_info || 0x01, 32)
+    key_info = b"WebPush: info" + b"\x00" + ua_pub_raw + as_raw
+    ikm = _wp_hkdf_info(prk_key, key_info)
+    if salt is None:
+        salt = secrets.token_bytes(16)
+    # PRK = HKDF-Extract(salt, IKM)
+    prk = hmac.new(salt, ikm, hashlib.sha256).digest()
+    cek = hmac.new(prk, b"Content-Encoding: aes128gcm" + b"\x00" + b"\x01",
+                  hashlib.sha256).digest()[:16]
+    nonce = hmac.new(prk, b"Content-Encoding: nonce" + b"\x00" + b"\x01",
+                     hashlib.sha256).digest()[:12]
+    # RFC 8188 header: salt(16) | rs(4, 4096) | keyid_len(1) | keyid
+    header = salt + (4096).to_bytes(4, "big") + bytes([65]) + as_raw
+    pt = plaintext + b"\x02"      # single record, pad delimiter
+    ct, tag = wp_gcm_encrypt(cek, nonce, pt)
+    return header + ct + tag
+
+
+
+
+def webpush_selftest():
+    """Validate the crypto at startup against known-good vectors."""
+    rk = wp_aes_expand(bytes(range(16)))
+    assert wp_aes_block(rk, bytes.fromhex("00112233445566778899aabbccddeeff")) \
+        .hex() == "69c4e0d86a7b0430d8cdb78070b4c55a"     # FIPS-197 C.1
+    body = wp_encrypt_payload(
+        b64u_decode("BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-"
+                    "AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4"),
+        b64u_decode("BTBZMqHH6r4Tts7J_aSIgg"),
+        b"When I grow up, I want to be a watermelon",
+        as_priv=int.from_bytes(b64u_decode(
+            "yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw"), "big"),
+        salt=b64u_decode("DGv6ra1nlYgDCS1FRnbzlw"))
+    want = ("DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27ml"
+            "mlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPT"
+            "pK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN")
+    assert b64u_encode(body) == want, "RFC 8291 self-test failed"
+
+
+def send_web_push(sub, title, body):
+    """Send one Web Push message (RFC 8291/8292) to a subscription.
+
+    Returns (ok, error, expired); expired=True means the subscription
+    is gone (HTTP 404/410) and should be pruned.
     """
-    service = str(push.get("service") or "ntfy").strip().lower()
+    cfg = get_config()
     try:
-        if service == "ntfy":
-            url = str(push.get("url") or "").strip()
-            if not url:
-                return False, "ntfy: topic URL is missing."
-            req = urllib.request.Request(
-                url, data=body.encode("utf-8"),
-                headers={"Title": title, "User-Agent": "emergency-food-tracker"})
-            urllib.request.urlopen(req, timeout=10)
-        elif service == "gotify":
-            url = str(push.get("url") or "").strip().rstrip("/")
-            token = str(push.get("token") or "").strip()
-            if not url or not token:
-                return False, "Gotify: server URL and app token are required."
-            data = json.dumps({"title": title, "message": body}).encode("utf-8")
-            req = urllib.request.Request(
-                url + "/message?token=" + urllib.parse.quote(token),
-                data=data, headers={"Content-Type": "application/json"})
-            urllib.request.urlopen(req, timeout=10)
-        elif service == "pushover":
-            token = str(push.get("token") or "").strip()
-            user = str(push.get("user") or "").strip()
-            if not token or not user:
-                return False, "Pushover: app token and user key are required."
-            data = urllib.parse.urlencode({
-                "token": token, "user": user,
-                "title": title, "message": body}).encode("utf-8")
-            req = urllib.request.Request(
-                "https://api.pushover.net/1/messages.json", data=data)
-            urllib.request.urlopen(req, timeout=10)
-        else:
-            return False, f"Unknown push service '{service}'."
-        return True, ""
+        payload = json.dumps({"title": title, "body": body[:3000],
+                              "tag": "food-alert", "url": "/"}).encode("utf-8")
+        encrypted = wp_encrypt_payload(b64u_decode(sub["p256dh"]),
+                                       b64u_decode(sub["auth"]), payload)
+        endpoint = str(sub["endpoint"])
+        u = urllib.parse.urlparse(endpoint)
+        aud = f"{u.scheme}://{u.netloc}"
+        priv = int.from_bytes(b64u_decode(cfg["vapid_priv"]), "big")
+        head = json.dumps({"typ": "JWT", "alg": "ES256"}, separators=(",", ":"))
+        claims = json.dumps({"aud": aud, "exp": int(time.time()) + 43200,
+                             "sub": "mailto:admin@emergency-food-tracker.local"},
+                            separators=(",", ":"))
+        signing_input = (b64u_encode(head.encode("utf-8")) + "." +
+                        b64u_encode(claims.encode("utf-8"))).encode("utf-8")
+        sig = wp_es256_sign(priv, signing_input)
+        jwt = signing_input.decode() + "." + b64u_encode(sig)
+        req = urllib.request.Request(endpoint, data=encrypted, headers={
+            "Content-Type": "application/octet-stream",
+            "Content-Encoding": "aes128gcm",
+            "TTL": "86400",
+            "Urgency": "high",
+            "Authorization": f"vapid t={jwt}, k={cfg['vapid_pub']}",
+            "User-Agent": "emergency-food-tracker"})
+        try:
+            urllib.request.urlopen(req, timeout=15)
+            return True, "", False
+        except urllib.error.HTTPError as e:
+            if e.code in (404, 410):
+                return False, f"subscription expired (HTTP {e.code})", True
+            return False, f"push service returned HTTP {e.code}", False
     except Exception as e:
-        return False, str(e)
+        return False, str(e), False
 
 
 def run_push_check():
-    """Compare every item's status tag with the previous check and push
-    an alert listing the items that got worse. The first run only
-    establishes the baseline (no alert)."""
+    """Compare every item's status tag with the previous check and send
+    each subscriber a Web Push for the households they can see. The
+    first run only establishes the baseline (no push)."""
     cfg = get_config()
-    push = cfg.get("push") or {}
-    if not push.get("enabled"):
-        return
+    subs = cfg.get("push_subs") or []
     prev = cfg.get("push_levels", {})
     cur = {}
-    lines = []
+    changed = {}                      # household -> [alert lines]
     for hh in list_households():
         for r in inventory_view(hh):
             key = f"{hh}:{r['id']}"
@@ -950,17 +1237,39 @@ def run_push_check():
                 name = r.get("product", "")
                 man = r.get("manufacturer", "")
                 label = f"{name} ({man})" if man else name
-                lines.append(f"{label}: {PUSH_LEVEL_TEXT.get(old, old)} -> "
-                             f"{PUSH_LEVEL_TEXT.get(level, level)}")
+                changed.setdefault(hh, []).append(
+                    f"{label}: {PUSH_LEVEL_TEXT.get(old, old)} -> "
+                    f"{PUSH_LEVEL_TEXT.get(level, level)}")
     cfg["push_levels"] = cur
     save_json(CONFIG_FILE, cfg)
-    if lines:
+    if not subs or not changed:
+        return
+    dead = []
+    for sub in subs:
+        user = find_user(str(sub.get("user", "")))
+        if not user:
+            dead.append(sub)          # user deleted -> prune
+            continue
+        hhs = list_households() if is_global_admin(user) else user_households(user)
+        lines = [line for hh in hhs for line in changed.get(hh, [])]
+        if not lines:
+            continue
         body = "\n".join(lines[:20])
         if len(lines) > 20:
             body += f"\n... and {len(lines) - 20} more"
-        ok, err = send_push(push, "Food storage alert", body)
-        if not ok:
-            print("push notification failed:", err)
+        ok, err, expired = send_web_push(sub, "Food storage alert", body)
+        if expired:
+            dead.append(sub)
+        elif not ok:
+            print("web push failed:", err)
+    if dead:
+        for d in dead:
+            try:
+                subs.remove(d)
+            except ValueError:
+                pass
+        cfg["push_subs"] = subs
+        save_json(CONFIG_FILE, cfg)
 
 
 def push_loop():
@@ -1090,6 +1399,21 @@ class Handler(BaseHTTPRequestHandler):
             if path in ("/", "/index.html"):
                 with open(os.path.join(STATIC_DIR, "index.html"), "rb") as f:
                     self.reply(200, f.read(), "text/html; charset=utf-8")
+            elif path == "/sw.js":
+                # v2.11: service worker for Web Push. Served at the root
+                # with Service-Worker-Allowed so its scope covers the app.
+                try:
+                    with open(os.path.join(STATIC_DIR, "sw.js"), "rb") as f:
+                        sw = f.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/javascript")
+                    self.send_header("Content-Length", str(len(sw)))
+                    self.send_header("Cache-Control", "no-cache")
+                    self.send_header("Service-Worker-Allowed", "/")
+                    self.end_headers()
+                    self.wfile.write(sw)
+                except FileNotFoundError:
+                    self.reply(404, {"error": "sw.js not found"})
             elif path == "/app-version.txt":
                 # v2.7.4: current bundled app version (for the download link)
                 try:
@@ -1151,7 +1475,7 @@ class Handler(BaseHTTPRequestHandler):
                     "oidc_enabled": oidc_enabled(),
                     "password_login": password_login_enabled(),
                     "oidc_name": get_config()["oidc"].get("name") or "SSO",
-                    "version": "2.10.2",
+                    "version": "2.11.0",
                     "user": ({**user_public(user),
                               "api_key": user.get("api_key", ""),
                               "visible_households": user_households(user) if not is_global_admin(user)
@@ -1224,10 +1548,16 @@ class Handler(BaseHTTPRequestHandler):
                 # v2.9: bundled country barcode lists + import status
                 require_global_admin(self)
                 self.reply(200, {"countries": barcode_countries()})
-            elif path == "/api/admin/push":
-                # v2.10.2: server-side push notification settings
-                require_global_admin(self)
-                self.reply(200, {"push": get_config().get("push", {})})
+            elif path == "/api/push/vapid":
+                # v2.11: the server's auto-generated VAPID public key
+                require_user(self)
+                self.reply(200, {"publicKey": get_config().get("vapid_pub", "")})
+            elif path == "/api/push/status":
+                # v2.11: the current user's push subscriptions
+                user = require_user(self)
+                subs = [s for s in get_config().get("push_subs", [])
+                        if s.get("user") == user["username"]]
+                self.reply(200, {"endpoints": [s.get("endpoint", "") for s in subs]})
             elif path == "/api/admin/barcodes":
                 # v2.7: list barcode -> product mappings (v2.9: with size)
                 require_global_admin(self)
@@ -1458,33 +1788,70 @@ class Handler(BaseHTTPRequestHandler):
                 require_global_admin(self)
                 res = import_barcode_country(body.get("country", ""))
                 self.reply(200, {"ok": True, **res})
-            elif path == "/api/admin/push":
-                # v2.10.2: save push notification settings
-                require_global_admin(self)
-                push = {
-                    "enabled": bool(body.get("enabled")),
-                    "service": str(body.get("service", "ntfy")).strip().lower(),
-                    "url": str(body.get("url", "")).strip(),
-                    "token": str(body.get("token", "")).strip(),
-                    "user": str(body.get("user", "")).strip(),
-                }
-                if push["service"] not in ("ntfy", "gotify", "pushover"):
-                    raise ValueError("Unknown push service.")
+            elif path == "/api/push/subscribe":
+                # v2.11: register this browser for push notifications
+                user = require_user(self)
+                s = body.get("subscription") or body
+                endpoint = str(s.get("endpoint") or "").strip()
+                keys = s.get("keys") or {}
+                p256dh = str(keys.get("p256dh") or s.get("p256dh") or "").strip()
+                auth = str(keys.get("auth") or s.get("auth") or "").strip()
+                if not (endpoint.startswith("http://") or
+                        endpoint.startswith("https://")) or not p256dh or not auth:
+                    raise ValueError("Incomplete push subscription.")
+                b64u_decode(p256dh)     # must be valid base64url
+                b64u_decode(auth)
                 cfg = get_config()
-                cfg["push"] = push
+                subs = cfg.setdefault("push_subs", [])
+                sub = None
+                for e in subs:
+                    if e.get("endpoint") == endpoint:
+                        sub = e
+                        break
+                if sub is None:
+                    sub = {"endpoint": endpoint}
+                    subs.append(sub)
+                sub.update({"p256dh": p256dh, "auth": auth,
+                            "user": user["username"],
+                            "added": date.today().isoformat()})
                 save_json(CONFIG_FILE, cfg)
+                send_web_push(sub, "Food storage tracker",
+                              "Notifications enabled - you will be alerted "
+                              "here when items start expiring.")
                 self.reply(200, {"ok": True})
-            elif path == "/api/admin/push/test":
-                # v2.10.2: send a test push to verify the settings
-                require_global_admin(self)
-                push = get_config().get("push", {})
-                if not push.get("enabled"):
-                    raise ValueError("Enable push notifications first.")
-                ok, err = send_push(push, "Food storage tracker",
-                                    "Test push - server notifications work.")
-                if not ok:
-                    raise ValueError(f"Push failed: {err}")
-                self.reply(200, {"ok": True})
+            elif path == "/api/push/unsubscribe":
+                # v2.11: remove one of the current user's subscriptions
+                user = require_user(self)
+                endpoint = str(body.get("endpoint") or "").strip()
+                cfg = get_config()
+                subs = cfg.setdefault("push_subs", [])
+                before = len(subs)
+                cfg["push_subs"] = [s for s in subs
+                                    if not (s.get("endpoint") == endpoint and
+                                            s.get("user") == user["username"])]
+                save_json(CONFIG_FILE, cfg)
+                self.reply(200, {"ok": True,
+                                 "removed": before - len(cfg["push_subs"])})
+            elif path == "/api/push/test":
+                # v2.11: send a test push to the current user's devices
+                user = require_user(self)
+                subs = [s for s in get_config().get("push_subs", [])
+                        if s.get("user") == user["username"]]
+                if not subs:
+                    raise ValueError("No device has notifications enabled yet.")
+                sent = 0
+                errs = []
+                for sub in subs:
+                    ok, err, expired = send_web_push(
+                        sub, "Food storage tracker",
+                        "Test notification - server notifications work.")
+                    if ok:
+                        sent += 1
+                    else:
+                        errs.append(err)
+                if not sent:
+                    raise ValueError("Push failed: " + "; ".join(errs[:2]))
+                self.reply(200, {"ok": True, "sent": sent})
             elif path == "/api/admin/oidc":
                 require_global_admin(self)
                 cfg = get_config()
@@ -1759,10 +2126,11 @@ def main():
         write_csv(PRODUCTS_CSV, PRODUCTS_HEADER, [])
     get_users()   # normalizes roles + generates per-user API keys
     get_config()
-    # v2.10.2: background push checker (daemon; survives nothing to do)
+    webpush_selftest()          # crypto sanity (FIPS-197 + RFC 8291)
+    # v2.11: background web-push checker (daemon)
     threading.Thread(target=push_loop, daemon=True).start()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.10.2: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v2.11.0: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 
