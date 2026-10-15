@@ -210,6 +210,7 @@
       <div class="toolbar">
         <input type="text" id="inv-filter" placeholder="Filter by product / manufacturer…">
         <span class="count" id="inv-count"></span>
+        <button id="inv-scan-btn" class="ghost" style="flex:0" hidden title="Scan items into the inventory">📷 Scan</button>
         <button id="inv-edit-btn" class="ghost" style="flex:0" hidden>✏️ Edit inventory</button>
         <span id="inv-edit-actions" hidden>
           <button id="inv-save-btn" class="ghost" style="flex:0">Save</button>
@@ -523,6 +524,38 @@
   </div>
 </div>
 
+<!-- inventory scan modal (v2.8 — separate from the product-list scan above) -->
+<div class="modal-bg" id="inv-scan-modal" hidden>
+  <div class="modal" style="max-width:400px">
+    <div class="row" style="justify-content:space-between">
+      <h2>Scan into inventory</h2>
+      <button class="del" id="inv-scan-close" title="Close">✕</button>
+    </div>
+    <video id="inv-scan-video" autoplay playsinline
+           style="width:100%;border-radius:8px;background:#000"></video>
+    <p class="muted" id="inv-scan-status" style="text-align:center;margin:6px 0 0">
+      Point the camera at a barcode…</p>
+    <div class="msg" id="msg-inv-scan"></div>
+    <div id="inv-scan-result" hidden>
+      <form id="f-inv-scan" class="row" style="flex-wrap:wrap;align-items:flex-end">
+        <span id="inv-scan-product" style="flex:2;min-width:180px;font-weight:600"></span>
+        <label style="flex:0">Best before<br>
+          <input id="inv-scan-date" type="date" required></label>
+        <label style="flex:0">Quantity<br>
+          <input id="inv-scan-qty" type="number" min="1" value="1"
+                 style="width:70px" title="How many of this item to add"></label>
+        <button type="submit" style="flex:0">Add</button>
+      </form>
+      <p class="muted" style="margin:8px 0 0">
+        Scanning more of the same? Just change the quantity — you don't need
+        to scan every item.</p>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="ghost" id="inv-scan-again" hidden>📷 Scan another item</button>
+    </div>
+  </div>
+</div>
+
 <!-- edit product modal (household/global admin) -->
 <div class="modal-bg" id="pe-modal" hidden>
   <div class="modal" style="max-width:440px">
@@ -681,6 +714,7 @@ function showApp() {
   $('auth').hidden = true; $('app').hidden = false;
   $('tab-barcodes').hidden = !isGlobalAdmin();
   $('b-scan').hidden = !IN_APP;
+  $('inv-scan-btn').hidden = !IN_APP;
   // v2.7.4: versioned download URL — unique per app version, so no cache
   // (browser / Cloudflare / proxy) can hand back a stale APK.
   fetch('/app-version.txt', { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(
@@ -780,7 +814,7 @@ function renderBuyProducts() {
     esc(p.name + (p.manufacturer ? ' — ' + p.manufacturer : '')) + `</option>`).join('');
 }
 
-function suggestBestBefore(productName, manufacturer) {
+function suggestBestBefore(productName, manufacturer, el = 'b-date') {
   const p = DATA.products.find(x => x.name === productName &&
     (x.manufacturer || '') === (manufacturer || ''));
   const t = p && typeById(p.type);
@@ -788,7 +822,7 @@ function suggestBestBefore(productName, manufacturer) {
   const months = t.shelf_life_months[1];
   const d = new Date();
   d.setMonth(d.getMonth() + months);
-  $('b-date').value = d.toISOString().slice(0, 10);
+  $(el).value = d.toISOString().slice(0, 10);
 }
 
 $('b-type').addEventListener('change', e => { buyType = e.target.value; renderBuyProducts(); });
@@ -1013,6 +1047,110 @@ function closeScan() {
 }
 $('b-scan').addEventListener('click', openScan);
 $('scan-close').addEventListener('click', closeScan);
+
+// ---------- inventory scan (v2.8: separate from the product-list scan) ----------
+// Adds a scanned product directly to the household inventory, with a
+// quantity field so you don't have to scan every single item. Completely
+// independent of the header 📷 scan (which pre-fills the "Record a
+// purchase" form / maps barcodes on the Barcodes tab).
+let invScanStream = null, invScanLoop = false, invScanProduct = null;
+
+async function handleInvBarcode(code, resume) {
+  const j = await api('GET', '/api/barcode?code=' + encodeURIComponent(code));
+  if (j.product) {
+    invScanProduct = j.product;
+    invScanLoop = false;
+    if (invScanStream) {
+      invScanStream.getTracks().forEach(t => t.stop());
+      invScanStream = null;
+    }
+    $('inv-scan-video').srcObject = null;
+    $('inv-scan-video').hidden = true;
+    $('inv-scan-status').textContent = '';
+    $('inv-scan-result').hidden = false;
+    $('inv-scan-product').textContent =
+      j.product.name +
+      (j.product.manufacturer ? ' — ' + j.product.manufacturer : '') +
+      (j.product.size ? ' (' + j.product.size + ')' : '');
+    $('inv-scan-qty').value = 1;
+    $('inv-scan-date').value = '';
+    suggestBestBefore(j.product.name, j.product.manufacturer || '', 'inv-scan-date');
+    msg('msg-inv-scan', '', true);
+  } else {
+    msg('msg-inv-scan', `Barcode ${code} is not mapped yet.` +
+      (isGlobalAdmin()
+        ? ' Use the 📷 button in the top bar to map it to a product first.'
+        : ' Ask a global admin to map it.'), false);
+    setTimeout(resume, 1500);   // show the message, then keep scanning
+  }
+}
+
+async function openInvScan() {
+  $('inv-scan-modal').hidden = false;
+  $('inv-scan-result').hidden = true;
+  $('inv-scan-again').hidden = true;
+  $('inv-scan-video').hidden = false;
+  $('inv-scan-status').textContent = 'Point the camera at a barcode…';
+  msg('msg-inv-scan', '', true);
+  if (!invScanStream) {
+    try {
+      invScanStream = await navigator.mediaDevices.getUserMedia(
+        { video: { facingMode: { ideal: 'environment' } } });
+      $('inv-scan-video').srcObject = invScanStream;
+    } catch (e) {
+      $('inv-scan-status').textContent = 'Camera unavailable: ' + (e.message || e);
+      return;
+    }
+  }
+  if (!('BarcodeDetector' in window)) {
+    $('inv-scan-status').textContent =
+      'Barcode scanning is not supported on this device — please update the Android System WebView.';
+    return;
+  }
+  const detector = new BarcodeDetector({
+    formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'qr_code'] });
+  invScanLoop = true;
+  const video = $('inv-scan-video');
+  const detect = async () => {
+    if (!invScanLoop) return;
+    try {
+      const codes = await detector.detect(video);
+      const raw = codes.length && codes[0].rawValue;
+      if (raw) { invScanLoop = false; handleInvBarcode(raw.trim(), detect); return; }
+    } catch (e) { /* keep scanning */ }
+    setTimeout(detect, 250);
+  };
+  detect();
+}
+
+function closeInvScan() {
+  invScanLoop = false;
+  invScanProduct = null;
+  $('inv-scan-modal').hidden = true;
+  if (invScanStream) { invScanStream.getTracks().forEach(t => t.stop()); invScanStream = null; }
+  $('inv-scan-video').srcObject = null;
+}
+
+$('inv-scan-btn').addEventListener('click', openInvScan);
+$('inv-scan-close').addEventListener('click', closeInvScan);
+$('inv-scan-again').addEventListener('click', openInvScan);
+
+$('f-inv-scan').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!invScanProduct) return;
+  const j = await api('POST', '/api/buy', { household: HH,
+    product: invScanProduct.name,
+    manufacturer: invScanProduct.manufacturer || '',
+    best_before: $('inv-scan-date').value,
+    quantity: $('inv-scan-qty').value || 1 });
+  if (j.error) { msg('msg-inv-scan', j.error, false); return; }
+  msg('msg-inv-scan', `Added ${$('inv-scan-qty').value || 1} × ` +
+    invScanProduct.name + ' ✓', true);
+  $('inv-scan-result').hidden = true;
+  $('inv-scan-again').hidden = false;
+  load();
+  setTimeout(() => { if (!$('inv-scan-modal').hidden) closeInvScan(); }, 1200);
+});
 
 // ---------- barcodes tab (global admin) ----------
 let BARCODES = [];
