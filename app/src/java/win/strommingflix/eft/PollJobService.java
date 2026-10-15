@@ -147,7 +147,7 @@ public class PollJobService extends JobService {
      *  background poll and the in-app test button. */
     static void notify(android.content.Context ctx, String body) {
         NotificationManager nm =
-                (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+                (NotificationManager) ctx.getSystemService(NOTIFICATION_SERVICE);
         if (nm == null) return;
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationChannel ch = new NotificationChannel(
