@@ -79,7 +79,7 @@ public class PollJobService extends JobService {
             // v2.12.2: main-thread cookie read (onStartJob has a Looper).
             cookie = CookieManager.getInstance().getCookie(base);
         } catch (Throwable t) {
-            CrashLog.store(ctx, t);   // record, never crash the process
+            CrashLog.store(this, t);   // record, never crash the process
             return false;
         }
         if (cookie == null || cookie.isEmpty()) return false; // not logged in
@@ -117,9 +117,10 @@ public class PollJobService extends JobService {
                 record(ctx, "no session cookie (not logged in)");
                 return;
             }
+            final String fBase = base, fDevice = device, fCookie = cookie;
             new Thread(() -> {
                 try {
-                    doPoll(ctx, base, device, cookie);
+                    doPoll(ctx, fBase, fDevice, fCookie);
                 } catch (Throwable t) {
                     CrashLog.store(ctx, t);
                 }
