@@ -59,8 +59,11 @@ jobs:
       contents: read
       packages: write
     steps:
-      - name: Checkout
+      - name: Checkout (fresh main, so the image bundles the APK
+              # the build-apk job just committed)
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Read version
         run: echo "APP_VERSION=v$(cat VERSION)" >> "$GITHUB_ENV"
@@ -97,8 +100,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Checkout
+      - name: Checkout (fresh main, includes the APK the build-apk
+              # job just committed)
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Create release if missing
         env:
