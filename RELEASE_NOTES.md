@@ -1,3 +1,46 @@
+# v3.0.0 — Country lists as CSVs, edit-mode locking, notifications for web users
+
+## Country barcode lists (Products tab)
+- Lists now live as **individual CSV files** in the folder
+  `data/barcode-countries/` (header:
+  `barcode,name,manufacturer,type,category,size`). The old single
+  `barcode-defaults.json` is migrated automatically on first start.
+- **Nothing is added to the product list automatically** — a list only
+  reaches your product list when you import it with
+  **"Add list to products"** (manual, once per list).
+- Global admins can now:
+  - **Download a country list** as CSV ("⬇ Download CSV"),
+  - **Add a new country list** or **update an existing one** by
+    uploading a CSV ("⬆ Add / update list"),
+  - **Export the product list** (with barcodes) as CSV
+    ("⬇ Export CSV" in the Product list toolbar).
+
+## Product list editing
+- **All editing is now locked behind the ✏️ Edit button.** The
+  per-product edit (✎) and remove (✕) buttons, and the
+  "Add a product" form, only appear in Edit mode.
+- Removed the per-product "remove barcode" (✕) and "add barcode" (＋)
+  buttons from the list — the Barcode column is read-only.
+- ✎ **Edit product** edits every product variable: type, category,
+  name, manufacturer and size.
+- New **🗑 Clear list** button (Edit mode) removes the entire product
+  list at once. It refuses while products are still in an inventory
+  (inventory is never touched) and clears barcode mappings.
+
+## Notifications
+- Browser (phone-web) notifications are back: **Enable / Disable /
+  Send test notification** for the browser push service (v2.11
+  mechanics, server checks about every six hours). These buttons are
+  hidden inside the Android app.
+- The Android app's **🔔 Test native notification** and
+  **Open notification settings** are hidden for browser users.
+
+## Android app
+- No app update in this release — the app is a WebView wrapper, so all
+  of the above arrives in the app after a server update. In the app,
+  Settings → About now shows the **current version** the UI is running
+  (v3.0.0) even though the APK wrapper itself is unchanged (2.12.6).
+
 # v2.12.8 — Cleanup: notifications tab + About tab
 
 ## Notifications tab

@@ -264,7 +264,7 @@
 
   <!-- ============ Products tab ============ -->
   <div data-pane="products" hidden>
-    <div class="card">
+    <div class="card" id="p-add-card" hidden>
       <h2>Add a product</h2>
       <div class="form-col" style="max-width:560px">
         <label for="p-barcode">Barcode (optional)</label>
@@ -295,7 +295,9 @@
         <button id="prod-edit-btn" class="ghost" style="flex:0" hidden>✏️ Edit</button>
         <span id="prod-edit-actions" hidden>
           <button id="prod-done-btn" class="ghost" style="flex:0">Done</button>
+          <button id="prod-clear-btn" class="ghost" style="flex:0">🗑 Clear list</button>
         </span>
+        <button id="prod-export-btn" class="ghost" style="flex:0" hidden>⬇ Export CSV</button>
       </div>
       <div class="scroll">
         <table id="t-products"><thead>
@@ -324,10 +326,21 @@
 
     <div class="card" id="bc-import-card" hidden>
       <h2>Barcode lists by country</h2>
-      <p class="muted">Use the below dropdown menu to add a pre-existing list of scanned barcodes, sorted by country of purchase.</p>
+      <p class="muted">Reference lists of scanned barcodes, one CSV file
+      per country. <b>Nothing is added to your product list
+      automatically</b> — when you want a list's products in your
+      product list, import it with the button below. You can also
+      download a list, update an existing list, or add a new country
+      list (upload a CSV).</p>
       <div class="row">
         <select id="bc-country" style="max-width:260px"></select>
-        <button id="bc-import" class="ghost">Add list</button>
+        <button id="bc-import" class="ghost">Add list to products</button>
+        <button id="bc-download" class="ghost">⬇ Download CSV</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <input id="bc-new-country" placeholder="Country name (new or to update)" style="max-width:240px">
+        <input type="file" id="bc-file" accept=".csv,text/csv" style="max-width:260px">
+        <button id="bc-upload" class="ghost">⬆ Add / update list</button>
       </div>
       <div class="msg" id="msg-bclist"></div>
     </div>
@@ -550,7 +563,21 @@
     <!-- ============ Notifications tab ============ -->
     <div class="tabpane" data-pane="notifications" hidden>
       <h3 style="margin:0 0 6px">Notifications</h3>
-      <p class="muted">Notifications on your phone, <b>even when the app is closed</b>. You can raise a test notification here to confirm they work.</p>
+      <p class="muted">Notifications on your phone, <b>even when the app
+      or browser is closed</b>, when items change status tag ("Less than
+      6 months", "Less than 3 months", "Less than 1 month" or
+      "Expired"). In the <b>Android app</b> a background check runs
+      about every 30 minutes (plus once right after you open the app)
+      and raises a system notification. In a <b>browser</b> you enable
+      push once per device and the server checks about every six
+      hours.</p>
+      <!-- browser web-push controls: web users only (v3.0; hidden in
+           the app, where the WebView has no push service) -->
+      <div class="row" id="web-push-row" hidden>
+        <button id="push-enable">Enable notifications on this device</button>
+        <button id="push-disable" class="ghost" hidden>Disable on this device</button>
+        <button id="push-test" class="ghost">Send test notification</button>
+      </div>
       <!-- native (app) controls, v2.12.4: only when EFTNative bridge exists -->
       <div class="row" id="native-row" hidden>
         <button id="native-test" class="ghost">🔔 Test native notification</button>
@@ -1104,6 +1131,7 @@ $('f-buy').addEventListener('submit', async e => {
 
 // ---------- barcode scanning (Android app only) ----------
 const IN_APP = /EFT-Android/i.test(navigator.userAgent);
+const PUSH_SUPPORTED = 'serviceWorker' in navigator && 'PushManager' in window;
 // Version of the installed app, from the EFT-Android/<version> UA token.
 const APP_VER = (() => {
   const m = navigator.userAgent.match(/EFT-Android\/(\d+(?:\.\d+)*)/i);
@@ -1215,10 +1243,12 @@ async function checkAppUpdate() {
 
 function refreshAboutTab() {
   const info = BOOT && BOOT.version ? `Server: v${esc(BOOT.version)}` : 'Server';
-  const appBit = IN_APP && APP_VER
-    ? (SERVER_APP_VER && cmpVer(SERVER_APP_VER, APP_VER) > 0
-        ? ` · App: v${esc(APP_VER)} (v${esc(SERVER_APP_VER)} available!)`
-        : ` · App: v${esc(APP_VER)} (up to date ✓)`)
+  const appBit = IN_APP
+    // v3.0: the app is a WebView wrapper, so from the user's
+    // perspective the app version IS the web UI version it is
+    // running — show the current version even when the APK wrapper
+    // itself was not updated.
+    ? ` · App: v${esc((BOOT && BOOT.version) || '?')}`
     : ' · App: not installed';
   $('about-versions').textContent = info + appBit;
   const btn = $('app-download');
@@ -1422,24 +1452,6 @@ $('f-inv-scan').addEventListener('submit', async e => {
   setTimeout(() => { if (!$('inv-scan-modal').hidden) closeInvScan(); }, 1200);
 });
 
-// ---------- product barcodes (merged from the old Barcodes tab) ----------
-// Global admin, inside the Products tab's edit mode: add / remove a
-// product's barcode mappings directly in the product list.
-window.pBcAdd = async (name, manufacturer) => {
-  const code = prompt(`Barcode to map to "${name}":`);
-  if (!code) return;
-  const j = await api('POST', '/api/admin/barcodes', {
-    barcode: code.trim(), name, manufacturer });
-  if (j.error) return alert(j.error);
-  load();
-};
-window.pBcDel = async (name, manufacturer, code) => {
-  if (!confirm(`Remove barcode ${code} from "${name}"?`)) return;
-  const j = await api('DELETE', '/api/admin/barcodes/' + encodeURIComponent(code));
-  if (j.error) return alert(j.error);
-  load();
-};
-
 // ---------- products tab ----------
 function visibleProducts() {
   let rows = DATA.products;
@@ -1465,6 +1477,11 @@ function visibleProducts() {
 function renderProdControls() {
   $('prod-edit-btn').hidden = prodEdit || !canEditProducts();
   $('prod-edit-actions').hidden = !prodEdit;
+  // v3.0: all product-list editing (adding included) is locked behind
+  // the Edit button
+  $('p-add-card').hidden = !prodEdit;
+  // v3.0: global admins can export the product list as CSV at any time
+  $('prod-export-btn').hidden = !isGlobalAdmin();
 }
 
 function renderProducts() {
@@ -1472,21 +1489,17 @@ function renderProducts() {
   const rows = visibleProducts();
   const tb = $('t-products').querySelector('tbody');
   tb.innerHTML = rows.map(p => {
-    const bcAdmin = isGlobalAdmin() && prodEdit;
+    // v3.0: barcodes are read-only here (per-product add/remove removed);
+    // editing anything requires the Edit button
     const bcCell = ((p.barcodes || []).length
-      ? (p.barcodes || []).map(code => `<code>${esc(code)}</code>` +
-          (bcAdmin ? ` <button class="del" title="Remove barcode"
-            onclick="pBcDel('${esc(p.name)}','${esc(p.manufacturer || '')}','${esc(code)}')">✕</button>`
-            : '')).join('<br>')
-      : '<span class="muted">—</span>') +
-      (bcAdmin ? ` <button class="del" title="Add barcode"
-        onclick="pBcAdd('${esc(p.name)}','${esc(p.manufacturer || '')}')">＋</button>` : '');
+      ? (p.barcodes || []).map(code => `<code>${esc(code)}</code>`).join('<br>')
+      : '<span class="muted">—</span>');
     return `<tr><td>${esc(p.name)}</td><td>${esc(p.manufacturer || '—')}</td>
      <td>${esc(typeLabel(p.type) || '—')}</td>
      <td>${esc(p.category || '—')}</td><td>${esc(p.size || '—')}</td>
      <td>${bcCell}</td>
      <td>
-       ${canEditProducts() ? `<button class="del" title="Edit product"
+       ${canEditProducts() && prodEdit ? `<button class="del" title="Edit product"
          onclick="editProduct('${esc(p.name)}','${esc(p.manufacturer || '')}')">✎</button>` : ''}
        ${canEditProducts() && prodEdit ? `<button class="del" title="Remove product"
          onclick="delProduct('${esc(p.name)}','${esc(p.manufacturer || '')}')">✕</button>` : ''}
@@ -1506,6 +1519,21 @@ function renderProducts() {
 
 $('prod-edit-btn').addEventListener('click', () => { prodEdit = true; renderProducts(); });
 $('prod-done-btn').addEventListener('click', () => { prodEdit = false; renderProducts(); });
+// v3.0: clear the entire product list (Edit mode only)
+$('prod-clear-btn').addEventListener('click', async () => {
+  if (!confirm('Remove ALL products from the product list?\n' +
+      'This cannot be undone. (Inventory items are never touched; ' +
+      'products that are still in an inventory block the clear.)')) return;
+  const j = await api('DELETE', '/api/products/all');
+  if (j.error) return alert(j.error);
+  alert('Removed ' + (j.removed || 0) + ' product(s).');
+  prodEdit = false;
+  load();
+});
+// v3.0: export the product list (with barcodes) as CSV
+$('prod-export-btn').addEventListener('click', () => {
+  location.href = '/api/admin/products-export.csv';
+});
 document.querySelectorAll('#t-products thead input[data-col]').forEach(inp =>
   inp.addEventListener('input', e => {
     prodColFilter[e.target.dataset.col] = e.target.value.toLowerCase();
@@ -1638,11 +1666,13 @@ async function refreshBarcodeCountries() {
     '<option value="">(no lists available)</option>';
 }
 
+// v3.0: import a country list into the product list — the ONLY way a
+// list reaches the products, always a manual admin action
 $('bc-import').addEventListener('click', async () => {
   const country = $('bc-country').value;
   if (!country) return msg('msg-bclist', 'Choose a country list to import.', false);
   const label = $('bc-country').selectedOptions[0].textContent;
-  if (!confirm(`Import the pre-scanned barcode list for ${label}?` +
+  if (!confirm(`Import the barcode list for ${label} into the product list?` +
       ' Products that already exist are not duplicated.')) return;
   const j = await api('POST', '/api/admin/barcodes/import', { country });
   if (j.error) return msg('msg-bclist', j.error, false);
@@ -1652,6 +1682,35 @@ $('bc-import').addEventListener('click', async () => {
       `the ${j.country} list ✓`, true);
   refreshBarcodeCountries();
   load();
+});
+
+// v3.0: download the selected country list as CSV
+$('bc-download').addEventListener('click', () => {
+  const country = $('bc-country').value;
+  if (!country) return msg('msg-bclist', 'Choose a country list to download.', false);
+  location.href = '/api/admin/barcode-countries/' +
+    encodeURIComponent(country) + '.csv';
+});
+
+// v3.0: add a new country list or update an existing one (upload CSV)
+$('bc-upload').addEventListener('click', async () => {
+  const file = $('bc-file').files[0];
+  const typed = $('bc-new-country').value.trim();
+  const selected = $('bc-country').value;
+  const country = typed || selected;
+  if (!file) return msg('msg-bclist', 'Choose a CSV file to upload.', false);
+  if (!country) return msg('msg-bclist',
+    'Type a country name (new list) or pick one in the dropdown.', false);
+  const csv = await file.text();
+  if (!confirm(`Save "${file.name}" as the barcode list for "${country}"?` +
+      ' An existing list with that name is overwritten.')) return;
+  const j = await api('POST', '/api/admin/barcode-countries', { country, csv });
+  if (j.error) return msg('msg-bclist', j.error, false);
+  msg('msg-bclist', (j.updated ? 'Updated' : 'Added') + ` the ${j.country} ` +
+      `list (${j.count} barcode(s)) ✓`, true);
+  $('bc-file').value = '';
+  $('bc-new-country').value = '';
+  refreshBarcodeCountries();
 });
 
 function roleLabel(u) {
@@ -1946,6 +2005,8 @@ function b64urlToBytes(b64) {
 async function refreshPushState() {
   const st = $('push-state');
   if (IN_APP) {
+    // phone-APP users: native notifications only (web-push buttons hidden)
+    $('web-push-row').hidden = true;
     $('native-row').hidden = !window.EFTNative;
     if (window.EFTNative) {
       // Real status from the app: permission | background job | last poll
@@ -1975,10 +2036,86 @@ async function refreshPushState() {
         'enable and test them here.';
     }
   } else {
-    st.textContent = 'Alerts are delivered natively by the Android app — ' +
-      'install or open the app to manage notifications on this device.';
+    // phone-WEB (browser) users: web push as in v2.11 (the native
+    // buttons stay hidden — there is no app bridge here)
+    $('web-push-row').hidden = false;
+    $('native-row').hidden = true;
+    const local = localStorage.getItem('pushEndpoint');
+    let remote = [];
+    const j = await api('GET', '/api/push/status');
+    if (!j.error) remote = j.endpoints || [];
+    const enabledHere = !!local && remote.includes(local);
+    $('push-enable').hidden = enabledHere;
+    $('push-disable').hidden = !enabledHere;
+    if (!PUSH_SUPPORTED) {
+      st.textContent = 'Push notifications are not available in this ' +
+        'browser. Open the tracker in Chrome or Firefox — or add it ' +
+        'to the home screen — and enable notifications there.';
+    } else if (enabledHere) {
+      st.textContent = 'Notifications are enabled on this device ✓ — ' +
+        'alerts will arrive even when the browser is closed.';
+    } else {
+      st.textContent = 'Not enabled on this device yet.';
+    }
   }
 }
+
+// browser web-push (v2.11; v3.0: web users only — the buttons are
+// hidden inside the Android app, which uses native notifications)
+$('push-enable').addEventListener('click', async () => {
+  if (!PUSH_SUPPORTED) return msg('msg-notif',
+    'Push notifications are not available in this browser. Open the tracker ' +
+    'in Chrome or Firefox on your phone and enable them there.', false);
+  let perm = 'Notification' in window ? Notification.permission : 'denied';
+  if (perm === 'default') {
+    try { perm = await Notification.requestPermission(); } catch (e) {}
+  }
+  if (perm !== 'granted') return msg('msg-notif',
+    'Notification permission was not granted.', false);
+  try {
+    const reg = await navigator.serviceWorker.register('sw.js');
+    await navigator.serviceWorker.ready;
+    const kp = await api('GET', '/api/push/vapid');
+    if (kp.error) return msg('msg-notif', kp.error, false);
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: b64urlToBytes(kp.publicKey) });
+    const raw = sub.toJSON();
+    const j = await api('POST', '/api/push/subscribe', { subscription: raw });
+    if (j.error) {
+      msg('msg-notif', j.error, false);
+      try { await sub.unsubscribe(); } catch (e) {}
+      return;
+    }
+    localStorage.setItem('pushEndpoint', raw.endpoint);
+    msg('msg-notif', 'Notifications enabled on this device ✓ — a test ' +
+      'notification is on its way.', true);
+    refreshPushState();
+  } catch (e) {
+    msg('msg-notif', 'Could not enable notifications: ' + e, false);
+  }
+});
+
+$('push-disable').addEventListener('click', async () => {
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg ? await reg.pushManager.getSubscription() : null;
+    if (sub) await sub.unsubscribe();
+  } catch (e) {}
+  const ep = localStorage.getItem('pushEndpoint');
+  if (ep) await api('POST', '/api/push/unsubscribe', { endpoint: ep });
+  localStorage.removeItem('pushEndpoint');
+  msg('msg-notif', 'Notifications turned off on this device.', true);
+  refreshPushState();
+});
+
+$('push-test').addEventListener('click', async () => {
+  const j = await api('POST', '/api/push/test', {});
+  msg('msg-notif',
+    j.error || 'Test notification sent ✓ — check your notifications.',
+    !j.error);
+});
 
 // native app test / settings (v2.12.4, via the EFTNative bridge)
 $('native-test').addEventListener('click', () => {

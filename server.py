@@ -1,8 +1,28 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.12.8)
+Emergency Food Storage Tracker — Web UI server (v3.0.0)
 =====================================================
 Zero-dependency web server (Python stdlib only).
+
+v3.0.0:
+- Country barcode lists now live as individual CSV files in one folder
+  (data/barcode-countries/, one file per country, header
+  barcode,name,manufacturer,type,category,size). Bundled lists are
+  seeded there on first start; global admins can add new lists and
+  update existing ones (upload a CSV). The old single
+  barcode-defaults.json is migrated once and no longer used.
+- Nothing is ever added to the product list automatically: a country
+  list only reaches the product list when a global admin imports it
+  deliberately ("Add list to products").
+- New endpoints: GET /api/admin/barcode-countries/<country>.csv
+  (download a list), POST /api/admin/barcode-countries (add/update a
+  list; body {country, csv}), GET /api/admin/products-export.csv
+  (export the product list, global admin), DELETE /api/products/all
+  (clear the entire product list; refuses while products are still in
+  an inventory and also clears now-stale barcode mappings).
+- In the app, the About tab shows the app version the web UI is
+  running (the app is a WebView wrapper, so the UI version IS the app
+  version from the user's perspective).
 
 v2.12.8:
 - Notifications tab cleaned up: the browser-push buttons ("Enable
@@ -236,6 +256,7 @@ Environment variables:
 
 import base64
 import csv
+import io
 import hashlib
 import hmac
 import json
@@ -259,7 +280,13 @@ APP_APK_BYTES = None                      # decoded once on first request
 # v2.8: bundled Swedish emergency-food barcode defaults. The file lives next
 # to server.py (image path in Docker), NOT inside DATA_DIR, so a mounted
 # /data volume can never shadow it.
+# v3.0: country barcode lists are individual CSV files in one folder
+# (inside DATA_DIR so admin edits persist across restarts). The old
+# single barcode-defaults.json is migrated once on first start and is
+# then no longer used.
+BARCODE_COUNTRY_DIR = os.path.join(DATA_DIR, "barcode-countries")
 BARCODE_DEFAULTS_FILE = os.path.join(APP_DIR, "data", "barcode-defaults.json")
+COUNTRY_LIST_HEADER = ["barcode", "name", "manufacturer", "type", "category", "size"]
 USERS_FILE = os.path.join(CONFIG_DIR, "users.json")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 PRODUCTS_CSV = os.path.join(DATA_DIR, "products.csv")   # global product list
@@ -727,44 +754,141 @@ def ensure_global_products():
     write_csv(PRODUCTS_CSV, PRODUCTS_HEADER, merged)
 
 
-def barcode_countries():
-    """v2.9: bundled country barcode reference lists (data/barcode-defaults.json)."""
+def country_label(code):
+    """Display label for a country list: the file name, title-cased."""
+    return (code or "").replace("_", " ").replace("-", " ").strip().title() or code
+
+
+def country_list_path(country):
+    country = str(country or "").strip().lower()
+    if not re.fullmatch(r"[a-z0-9_-]{1,40}", country):
+        raise ValueError("Invalid country name (letters, digits, - and _ only).")
+    return os.path.join(BARCODE_COUNTRY_DIR, country + ".csv")
+
+
+def ensure_barcode_country_lists():
+    """v3.0: one CSV file per country in DATA_DIR/barcode-countries/.
+
+    Creates the folder and, once, migrates the v2.x single
+    barcode-defaults.json into per-country CSVs. Never touches the
+    product list — importing a list is a manual admin action.
+    """
+    os.makedirs(BARCODE_COUNTRY_DIR, exist_ok=True)
+    if any(f.endswith(".csv") for f in os.listdir(BARCODE_COUNTRY_DIR)):
+        return
     try:
         with open(BARCODE_DEFAULTS_FILE, encoding="utf-8") as f:
             defaults = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         defaults = {}
-    if not isinstance(defaults, dict):
-        defaults = {}
+    if isinstance(defaults, dict):
+        for code, spec in defaults.items():
+            items = spec.get("items", []) if isinstance(spec, dict) else []
+            if not isinstance(items, list):
+                continue
+            rows = []
+            for d in items:
+                if not isinstance(d, dict):
+                    continue
+                name = str(d.get("name", "")).strip()
+                bc = str(d.get("barcode", "")).strip()
+                if not name or not bc:
+                    continue
+                rows.append({"barcode": bc, "name": name,
+                            "manufacturer": str(d.get("manufacturer", "")).strip(),
+                            "type": str(d.get("type", "")).strip(),
+                            "category": str(d.get("category", "")).strip(),
+                            "size": str(d.get("size", "")).strip()})
+            if rows:
+                try:
+                    path = country_list_path(code)
+                except ValueError:
+                    continue
+                write_csv(path, COUNTRY_LIST_HEADER, rows)
+
+
+def barcode_countries():
+    """v3.0: country barcode lists (one CSV file each) + import status."""
+    ensure_barcode_country_lists()
     imported = get_config().setdefault("barcode_imports", {})
     out = []
-    for code, spec in defaults.items():
-        items = spec.get("items", []) if isinstance(spec, dict) else []
+    for fname in sorted(os.listdir(BARCODE_COUNTRY_DIR)):
+        if not fname.endswith(".csv"):
+            continue
+        code = fname[:-4]
+        try:
+            rows = read_csv(os.path.join(BARCODE_COUNTRY_DIR, fname))
+        except Exception:
+            rows = []
         out.append({"country": code,
-                    "label": (spec.get("label", code)
-                              if isinstance(spec, dict) else code),
-                    "count": len(items),
+                    "label": country_label(code),
+                    "count": len(rows),
                     "imported": bool(imported.get(code))})
     return out
 
 
-def import_barcode_country(country):
-    """v2.9: import a bundled country barcode list on demand.
+def read_barcode_country(country):
+    path = country_list_path(country)
+    if not os.path.isfile(path):
+        raise ValueError("Unknown country barcode list.")
+    rows = read_csv(path)
+    for r in rows:
+        r.setdefault("barcode", "")
+        r.setdefault("name", "")
+        r.setdefault("manufacturer", "")
+        r.setdefault("type", "")
+        r.setdefault("category", "")
+        r.setdefault("size", "")
+    return rows
 
-    Runs once per country (tracked in config "barcode_imports"); adds any
-    missing products to the global product list and maps their barcodes.
-    Never overwrites existing products or mappings, and admin deletions
-    stick - the import is not re-run for that country.
+
+def save_barcode_country(country, csv_text):
+    """v3.0: add a new country list or update an existing one.
+
+    Accepts a CSV with or without the header row
+    (barcode,name,manufacturer,type,category,size). Overwrites the
+    existing file for that country.
+    """
+    path = country_list_path(country)
+    country = str(country or "").strip().lower()
+    text = str(csv_text or "").lstrip("\ufeff")
+    reader = csv.reader(io.StringIO(text))
+    raw = [r for r in reader if any((c or "").strip() for c in r)]
+    if not raw:
+        raise ValueError("The CSV file is empty.")
+    first = [c.strip().lower() for c in raw[0]]
+    start = 0
+    if first == COUNTRY_LIST_HEADER:
+        start = 1
+    rows = []
+    for r in raw[start:]:
+        r = (r + [""] * 6)[:6]
+        bc, name, man, ftype, cat, size = [c.strip() for c in r]
+        if not bc or not name:
+            continue
+        rows.append({"barcode": bc, "name": name, "manufacturer": man,
+                     "type": ftype, "category": cat, "size": size})
+    if not rows:
+        raise ValueError("No usable rows: each row needs at least a "
+                         "barcode and a product name.")
+    existed = os.path.isfile(path)
+    write_csv(path, COUNTRY_LIST_HEADER, rows)
+    # a re-import after an update should be possible
+    cfg = get_config()
+    if cfg.setdefault("barcode_imports", {}).get(country) and existed:
+        pass   # keep the imported flag; the admin can clear the list to reset
+    return {"country": country, "count": len(rows), "updated": existed}
+
+
+def import_barcode_country(country):
+    """v3.0: import a country barcode list into the product list.
+
+    Strictly manual: runs only when a global admin asks for it. Adds
+    missing products to the global product list and maps their
+    barcodes; never overwrites existing products or mappings.
     """
     country = str(country or "").strip().lower()
-    try:
-        with open(BARCODE_DEFAULTS_FILE, encoding="utf-8") as f:
-            defaults = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        defaults = {}
-    spec = defaults.get(country) if isinstance(defaults, dict) else None
-    if not isinstance(spec, dict) or not isinstance(spec.get("items"), list):
-        raise ValueError("Unknown country barcode list.")
+    rows = read_barcode_country(country)
     cfg = get_config()
     imported = cfg.setdefault("barcode_imports", {})
     if imported.get(country):
@@ -775,7 +899,7 @@ def import_barcode_country(country):
             for p in products}
     barcodes = cfg.setdefault("barcodes", {})
     added = mapped = 0
-    for d in spec["items"]:
+    for d in rows:
         name = str(d.get("name", "")).strip()
         code = str(d.get("barcode", "")).strip()
         manufacturer = str(d.get("manufacturer", "")).strip()
@@ -784,7 +908,7 @@ def import_barcode_country(country):
         key = (name.lower(), manufacturer.lower())
         if key not in seen:
             seen.add(key)
-            ftype = d.get("type", "")
+            ftype = str(d.get("type", "")).strip()
             products.append({
                 "name": name,
                 "manufacturer": manufacturer,
@@ -803,6 +927,33 @@ def import_barcode_country(country):
     save_json(CONFIG_FILE, cfg)
     return {"country": country, "added": added, "mapped": mapped,
             "already": False}
+
+
+def clear_products():
+    """v3.0: clear the entire product list (admin "Clear list" button).
+
+    Refuses while any product still has items in an inventory, and
+    drops the barcode mappings + import flags that would otherwise be
+    left stale (so a country list can be re-imported afterwards).
+    """
+    products = read_csv(PRODUCTS_CSV)
+    if not products:
+        return {"removed": 0}
+    in_inventory = set()
+    for hh in list_households():
+        for r in read_csv(os.path.join(household_dir(hh), "inventory.csv")):
+            in_inventory.add((r["product"].lower(), r.get("manufacturer", "").lower()))
+    blocking = [p for p in products
+                if (p["name"].lower(), p.get("manufacturer", "").lower()) in in_inventory]
+    if blocking:
+        raise ValueError("%d product(s) are still in an inventory — remove "
+                         "those items first." % len(blocking))
+    write_csv(PRODUCTS_CSV, PRODUCTS_HEADER, [])
+    cfg = get_config()
+    cfg["barcodes"] = {}          # all mappings pointed at removed products
+    cfg["barcode_imports"] = {}   # allow re-importing a country list
+    save_json(CONFIG_FILE, cfg)
+    return {"removed": len(products)}
 
 
 # ======================= model =======================
@@ -1472,10 +1623,13 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         print("%s - %s" % (self.address_string(), fmt % args))
 
-    def reply(self, code, body, content_type="application/json", set_cookie=None):
+    def reply(self, code, body, content_type="application/json",
+              set_cookie=None, disposition=None):
         data = body if isinstance(body, bytes) else json.dumps(body).encode()
         self.send_response(code)
         self.send_header("Content-Type", content_type)
+        if disposition:
+            self.send_header("Content-Disposition", disposition)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         if set_cookie:
@@ -1595,7 +1749,7 @@ class Handler(BaseHTTPRequestHandler):
                     "oidc_enabled": oidc_enabled(),
                     "password_login": password_login_enabled(),
                     "oidc_name": get_config()["oidc"].get("name") or "SSO",
-                    "version": "2.12.8",
+                    "version": "3.0.0",
                     "user": ({**user_public(user),
                               "api_key": user.get("api_key", ""),
                               "visible_households": user_households(user) if not is_global_admin(user)
@@ -1665,9 +1819,46 @@ class Handler(BaseHTTPRequestHandler):
                                  "types": get_food_types(),
                                  "default_types": DEFAULT_FOOD_TYPES})
             elif path == "/api/admin/barcode-countries":
-                # v2.9: bundled country barcode lists + import status
+                # v3.0: country barcode lists (one CSV each) + import status
                 require_global_admin(self)
                 self.reply(200, {"countries": barcode_countries()})
+            m = re.fullmatch(r"/api/admin/barcode-countries/([A-Za-z0-9_-]+)\.csv", path)
+            if m:
+                # v3.0: download one country list as CSV
+                require_global_admin(self)
+                rows = read_barcode_country(m.group(1))
+                buf = io.StringIO()
+                w = csv.DictWriter(buf, fieldnames=COUNTRY_LIST_HEADER)
+                w.writeheader()
+                w.writerows(rows)
+                self.reply(200, buf.getvalue().encode("utf-8"),
+                           "text/csv; charset=utf-8",
+                           disposition='attachment; filename="%s-barcode-list.csv"'
+                                       % m.group(1).lower())
+                return
+            if path == "/api/admin/products-export.csv":
+                # v3.0: export the product list (with barcodes) as CSV
+                require_global_admin(self)
+                products = read_csv(PRODUCTS_CSV)
+                bc_map = get_config().get("barcodes", {})
+                per_product = {}
+                for code, m_ in bc_map.items():
+                    key = (m_.get("name", "").lower(),
+                           m_.get("manufacturer", "").lower())
+                    per_product.setdefault(key, []).append(code)
+                buf = io.StringIO()
+                w = csv.writer(buf)
+                w.writerow(PRODUCTS_HEADER + ["barcodes"])
+                for pr in products:
+                    codes = sorted(per_product.get(
+                        (pr.get("name", "").lower(),
+                         pr.get("manufacturer", "").lower()), []))
+                    w.writerow([pr.get(h, "") for h in PRODUCTS_HEADER] +
+                               [";".join(codes)])
+                self.reply(200, buf.getvalue().encode("utf-8"),
+                           "text/csv; charset=utf-8",
+                           disposition='attachment; filename="products.csv"')
+                return
             elif path == "/api/push/vapid":
                 # v2.11: the server's auto-generated VAPID public key
                 require_user(self)
@@ -1949,9 +2140,16 @@ class Handler(BaseHTTPRequestHandler):
                 save_json(CONFIG_FILE, cfg)
                 self.reply(200, {"ok": True, "barcode": code, "name": prod["name"]})
             elif path == "/api/admin/barcodes/import":
-                # v2.9: import a bundled country barcode list on demand
+                # v3.0: import a country list into the product list
+                # (strictly manual — nothing auto-adds products)
                 require_global_admin(self)
                 res = import_barcode_country(body.get("country", ""))
+                self.reply(200, {"ok": True, **res})
+            elif path == "/api/admin/barcode-countries":
+                # v3.0: add a new country list or update an existing one
+                require_global_admin(self)
+                res = save_barcode_country(body.get("country", ""),
+                                           body.get("csv", ""))
                 self.reply(200, {"ok": True, **res})
             elif path == "/api/push/subscribe":
                 # v2.11: register this browser for push notifications
@@ -2213,6 +2411,12 @@ class Handler(BaseHTTPRequestHandler):
                 remove_item(h, m.group(1))
                 self.reply(200, {"ok": True})
                 return
+            if path == "/api/products/all":
+                # v3.0: clear the entire product list
+                require_any_household_admin(self)
+                res = clear_products()
+                self.reply(200, {"ok": True, **res})
+                return
             m = re.fullmatch(r"/api/products/(.+)", path)
             if m:
                 require_any_household_admin(self)
@@ -2295,7 +2499,7 @@ def main():
     # v2.11: background web-push checker (daemon)
     threading.Thread(target=push_loop, daemon=True).start()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.12.8: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v3.0.0: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 
