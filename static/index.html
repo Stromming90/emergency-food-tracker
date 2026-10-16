@@ -324,13 +324,7 @@
 
     <div class="card" id="bc-import-card" hidden>
       <h2>Barcode lists by country</h2>
-      <p class="muted">Use the below dropdown menu to add a pre-existing
-      list of scanned barcodes, sorted by country of purchase. The list is
-      added to your barcode mappings and to the global product list
-      (products that already exist are not duplicated). Each list can be
-      imported once; barcodes you remove afterwards stay removed. The
-      barcodes appear in the <b>Barcode</b> column of the product list —
-      press <b>✏️ Edit</b> to add or remove a product's barcodes.</p>
+      <p class="muted">Use the below dropdown menu to add a pre-existing list of scanned barcodes, sorted by country of purchase.</p>
       <div class="row">
         <select id="bc-country" style="max-width:260px"></select>
         <button id="bc-import" class="ghost">Add list</button>
@@ -343,10 +337,7 @@
   <div data-pane="types" hidden>
     <div class="card" style="max-width:760px">
       <h2>Types &amp; Categories</h2>
-      <p class="muted">The product types and their category options used
-      in the dropdowns when adding/editing products. Products keep their
-      old values even if you remove them from the lists. Global admin
-      only; editing is locked behind the Edit button.</p>
+      <p class="muted">The product types and their category options. Products keep their old values even if you remove them from the lists.</p>
       <div class="toolbar">
         <span class="count" id="types-count"></span>
         <button id="types-edit-btn" class="ghost" style="flex:0" hidden>✏️ Edit</button>
@@ -370,10 +361,8 @@
       <h2>Emergency food &amp; water at home — one simple recommendation</h2>
       <p>Aim to be self-sufficient for <b>at least one week (ideally two)</b> per person:</p>
       <ul>
-        <li><b>~2,200 kcal</b> of food per person per day — about
-          <b>15&nbsp;kg of shelf-stable food per person for two weeks</b></li>
-        <li><b>3–5 liters of water per person per day</b> (drinking + cooking +
-          basic hygiene) — around <b>40–60&nbsp;L per person for two weeks</b></li>
+        <li><b>~2,200 kcal</b> of food per person per day — about <b>15&nbsp;kg of shelf-stable food per person for two weeks</b></li>
+        <li><b>3–5 liters of water per person per day</b> (drinking + cooking + basic hygiene) — around <b>40–60&nbsp;L per person for two weeks</b></li>
       </ul>
       <h3 style="margin:14px 0 4px">What to stock</h3>
       <p class="muted" style="margin:4px 0">Food that keeps at room temperature,
@@ -385,15 +374,10 @@
         <li>oil</li><li>salt</li><li>honey</li><li>bottled water</li>
       </ul>
       <h3 style="margin:14px 0 4px">How to manage it</h3>
-      <p class="muted" style="margin:4px 0">Buy a little extra of what you
-      normally eat, rotate it in daily life, check dates every six months, and
-      adapt for children, special diets, and pets.</p>
+      <p class="muted" style="margin:4px 0">Buy a little extra of what you normally eat, rotate it in daily life, check dates every six months, and adapt for children, special diets, and pets.</p>
       <h3 style="margin:16px 0 4px">Storage &amp; shelf life by food type</h3>
-      <p class="muted" style="margin:4px 0">Typical shelf life at room
-      temperature in <b>months</b>, for unopened store-bought items stored
-      cool, dark and dry. "Best before" is a quality statement, not a safety
-      limit: many dry and canned foods stay good long beyond it — check
-      look, smell and taste before use.</p>
+      <p class="muted" style="margin:4px 0">Typical shelf life at room temperature in <b>months</b>, for unopened store-bought items stored cool, dark and dry. 
+        "Best before" is a quality statement, not a safety limit: many dry and canned foods stay good long beyond it — check look, smell and taste before use.</p>
       <div class="scroll">
         <table id="t-storage"><thead>
           <tr><th>Food</th><th>Shelf life (months)</th><th>Storage tips</th>
@@ -468,34 +452,13 @@
       depends on your role:</p>
       <ul class="muted" style="margin:6px 0; line-height:1.6">
         <li><b>General</b> — this overview.</li>
-        <li><b>Users</b> — create and manage user accounts. Global admins manage
-        everyone; household admins manage the users of the households they
-        administer (create accounts, reset passwords, grant or revoke household
-        admin).</li>
-        <li><b>Households</b> — create new households (you become the household
-        admin of a household you create), see members, migrate inventory
-        between households (household admins), and delete households
-        (global admin only).</li>
-        <li><b>Types &amp; Categories</b> — browse the product types and
-        category options used in the dropdowns — now a tab on the main
-        page (global admin only, editing behind an Edit button).</li>
-        <li><b>Authentication</b> — configure OIDC / SSO login (Keycloak,
-        Authentik, Authelia…), and enable/disable SSO or password login.
-        Global admin only.</li>
-        <li><b>Notifications</b> — enable <b>real push notifications</b>
-        on each device with one tap (Settings → Notifications). No
-        third-party apps, no accounts, no tokens: the server generates
-        its own keys and your browser's push service delivers the
-        alerts — even when the app is closed. Each user manages their
-        own devices.</li>
-        <li><b>API Key</b> — your personal key for the gethomepage widget.
-        Each user has their own key and can regenerate it at any time; the
-        widget only reports the households you have access to.</li>
+        <li><b>Users</b> — create and manage user accounts. Global admins manage everyone; household admins manage the users of the households they administer.</li>
+        <li><b>Households</b> — create new households, see members, migrate inventory between households, and delete households.</li>
+        <li><b>Authentication</b> — configure OIDC / SSO login and enable/disable SSO or password login.</li>
+        <li><b>Notifications</b> — enable notifications on each device.</li>
+        <li><b>API Key</b> — your personal key.</li>
       </ul>
-      <p class="muted">Roles: a <b>global admin</b> can do and see everything.
-      A <b>household admin</b> can edit the product list, migrate inventory and
-      manage the users of the households they administer, and can make other
-      users household admins of those households.</p>
+      <p class="muted">Roles: a <b>global admin</b> can do everything. A <b>household admin</b> can edit the product list, migrate inventory and manage the users of the households they administer.</p>
     </div>
 
     <!-- ============ Users tab ============ -->
@@ -522,7 +485,7 @@
 
       <h3>Create household</h3>
       <p class="muted" style="margin:2px 0">Any user can create a household — you
-      become its household admin. Global admins can also assign other users to it.</p>
+      become its household admin.</p>
       <div class="row">
         <input id="hh-new" placeholder="New household name" style="max-width:220px">
         <button id="hh-add" class="ghost">Create</button>
@@ -553,7 +516,7 @@
 
         <h3>Migrate inventory</h3>
         <p class="muted" style="margin:4px 0">Move all inventory from one household
-        to another — household admins of the source household or global admins.</p>
+        to another.</p>
         <div class="row">
           <label class="muted">From <select id="mig-from"></select></label>
           <label class="muted">To <select id="mig-to"></select></label>
@@ -587,13 +550,7 @@
     <!-- ============ Notifications tab ============ -->
     <div class="tabpane" data-pane="notifications" hidden>
       <h3 style="margin:0 0 6px">Notifications</h3>
-      <p class="muted">Notifications on your phone, <b>even when the app
-      is closed</b>. Inside the Android app a background check runs about
-      every 30 minutes (and once right after you open the app) and
-      raises a system notification when items change status tag
-      ("Less than 6 months", "Less than 3 months", "Less than 1 month"
-      or "Expired"). You can raise a test notification here to confirm
-      they work.</p>
+      <p class="muted">Notifications on your phone, <b>even when the app is closed</b>. You can raise a test notification here to confirm they work.</p>
       <!-- native (app) controls, v2.12.4: only when EFTNative bridge exists -->
       <div class="row" id="native-row" hidden>
         <button id="native-test" class="ghost">🔔 Test native notification</button>
@@ -606,11 +563,7 @@
     <!-- ============ API Key tab ============ -->
     <div class="tabpane" data-pane="apikey" hidden>
       <h3 style="margin:0 0 6px">Homepage widget</h3>
-      <p class="muted">This is <b>your personal</b> API key for the gethomepage
-      widget. Each user has their own unique key; the widget only reports the
-      households you have access to. Use it in your widget config — the URL
-      accepts <code>household=default</code>, a comma-separated list, or
-      <code>household=all</code> (all of your households).</p>
+      <p class="muted">This is <b>your personal</b> API key for the gethomepage widget. Each user has their own unique key; the widget only reports the households you have access to. Use it in your widget config — the URL accepts <code>household=default</code>, a comma-separated list, or <code>household=all</code> (all of your households).</p>
       <code id="apikey">…</code>
       <div class="row" style="margin-top:10px">
         <button id="apikey-regen" class="ghost">Regenerate API key</button>
