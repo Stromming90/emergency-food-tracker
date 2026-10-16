@@ -1,3 +1,24 @@
+# v2.12.8 — Cleanup: notifications tab + About tab
+
+## Notifications tab
+- Removed "Enable notifications on this device", "Disable on this
+  device" and "Send test notification" (browser web-push buttons —
+  they never worked inside the Android app, which has no push
+  service). Kept the buttons that work: "🔔 Test native notification"
+  and "Open notification settings".
+- The section text now describes the actual behaviour: a background
+  check about every 30 minutes (plus one right after the app opens)
+  that raises a system notification when items change status tag.
+
+## About tab
+- When the installed app is the latest version, the download button
+  is hidden (nothing to download).
+- Removed the "Download this update…" explanation text and the
+  "The APK installs over…" paragraph.
+
+Server-only change (v2.12.8); no app update needed — the app ships
+this UI from the server.
+
 # v2.12.7 — Fix: "Last check: HTTP 401" + silent test button (app 2.12.6)
 
 ## What was wrong

@@ -587,18 +587,13 @@
     <!-- ============ Notifications tab ============ -->
     <div class="tabpane" data-pane="notifications" hidden>
       <h3 style="margin:0 0 6px">Notifications</h3>
-      <p class="muted">Real push notifications to your phone, <b>even
-      when the app is closed</b> — with <b>no third-party apps, accounts
-      or tokens</b>. The server checks all households about every six
-      hours and alerts every subscribed device when items change status
-      tag ("Less than 6 months", "Less than 3 months", "Less than 1
-      month" or "Expired"). Enable it once per device; delivery uses
-      your browser's built-in push service.</p>
-      <div class="row">
-        <button id="push-enable">Enable notifications on this device</button>
-        <button id="push-disable" class="ghost" hidden>Disable on this device</button>
-        <button id="push-test" class="ghost">Send test notification</button>
-      </div>
+      <p class="muted">Notifications on your phone, <b>even when the app
+      is closed</b>. Inside the Android app a background check runs about
+      every 30 minutes (and once right after you open the app) and
+      raises a system notification when items change status tag
+      ("Less than 6 months", "Less than 3 months", "Less than 1 month"
+      or "Expired"). You can raise a test notification here to confirm
+      they work.</p>
       <!-- native (app) controls, v2.12.4: only when EFTNative bridge exists -->
       <div class="row" id="native-row" hidden>
         <button id="native-test" class="ghost">🔔 Test native notification</button>
@@ -633,11 +628,6 @@
       <div class="row" style="margin-top:6px">
         <button id="app-download">⬇ Download Android app</button>
       </div>
-      <p class="muted" style="margin:6px 0 0">The APK installs over an
-      existing installation (same signing key) — your server address,
-      login session and settings are kept. Android may ask you to
-      confirm the install; that is expected for any APK installed
-      outside the Play Store.</p>
       <div class="msg" id="msg-about"></div>
     </div>
   </div>
@@ -1260,6 +1250,7 @@ async function checkAppUpdate() {
       if (v && cmpVer(v, APP_VER) > 0) {
         SERVER_APP_VER = v;
         showAppBanner('update', v);
+        refreshAboutTab();   // About tab may already be open
       }
     } catch (e) { /* offline / older server: never mind */ }
   } else if (/Android/i.test(navigator.userAgent) &&
@@ -1279,16 +1270,18 @@ function refreshAboutTab() {
   $('about-versions').textContent = info + appBit;
   const btn = $('app-download');
   if (IN_APP) {
-    $('about-app-text').textContent = 'Download the update: the app ' +
-      'downloads it itself and opens the installer (app 2.12.4+), or ' +
-      'use the browser buttons in the dialog as a fallback.';
+    $('about-app-text').textContent = '';
   } else {
     $('about-app-text').textContent = 'A tiny app that wraps this website ' +
       'with native notifications and camera barcode scanning. Download it, ' +
       'open the APK, and point it at this server.';
   }
-  btn.textContent = (IN_APP && APP_VER && SERVER_APP_VER &&
-                     cmpVer(SERVER_APP_VER, APP_VER) > 0)
+  const updateAvailable = IN_APP && APP_VER && SERVER_APP_VER &&
+    cmpVer(SERVER_APP_VER, APP_VER) > 0;
+  // In the app with no newer version available there is nothing to
+  // download — hide the button entirely.
+  btn.hidden = IN_APP && !!APP_VER && !updateAvailable;
+  btn.textContent = updateAvailable
     ? `⬇ Download update (v${SERVER_APP_VER})` : '⬇ Download Android app';
 }
 
@@ -1988,7 +1981,6 @@ $('apikey-regen').addEventListener('click', async () => {
 });
 
 // ---- web push notifications (zero-config Web Push / VAPID) ----
-const PUSH_SUPPORTED = 'serviceWorker' in navigator && 'PushManager' in window;
 
 function b64urlToBytes(b64) {
   const pad = '='.repeat((4 - b64.length % 4) % 4);
@@ -2000,15 +1992,6 @@ function b64urlToBytes(b64) {
 
 async function refreshPushState() {
   const st = $('push-state');
-  const local = localStorage.getItem('pushEndpoint');
-  let remote = [];
-  if (USER) {
-    const j = await api('GET', '/api/push/status');
-    if (!j.error) remote = j.endpoints || [];
-  }
-  const enabledHere = !!local && remote.includes(local);
-  $('push-enable').hidden = enabledHere;
-  $('push-disable').hidden = !enabledHere;
   if (IN_APP) {
     $('native-row').hidden = !window.EFTNative;
     if (window.EFTNative) {
@@ -2035,74 +2018,14 @@ async function refreshPushState() {
       st.textContent = txt;
     } else {
       st.textContent = 'Notifications on this device are handled by the ' +
-        'Android app itself. Update the app to v2.12.3 or later (Settings ' +
-        '→ About → Download) to enable and test them here.';
+        'Android app itself. Update the app to v2.12.3 or later to ' +
+        'enable and test them here.';
     }
-  } else if (!PUSH_SUPPORTED) {
-    st.textContent = 'Push notifications are not available in this ' +
-      'browser. Open the tracker in Chrome or Firefox — or add it to ' +
-      'the home screen — and enable notifications there.';
-  } else if (enabledHere) {
-    st.textContent = 'Notifications are enabled on this device ✓ — ' +
-      'alerts will arrive even when the app is closed.';
   } else {
-    st.textContent = 'Not enabled on this device yet.';
+    st.textContent = 'Alerts are delivered natively by the Android app — ' +
+      'install or open the app to manage notifications on this device.';
   }
 }
-
-$('push-enable').addEventListener('click', async () => {  if (!PUSH_SUPPORTED) return msg('msg-notif',
-    'Push notifications are not available in this app. Open the tracker ' +
-    'in Chrome or Firefox on your phone and enable them there.', false);
-  let perm = 'Notification' in window ? Notification.permission : 'denied';
-  if (perm === 'default') {
-    try { perm = await Notification.requestPermission(); } catch (e) {}
-  }
-  if (perm !== 'granted') return msg('msg-notif',
-    'Notification permission was not granted.', false);
-  try {
-    const reg = await navigator.serviceWorker.register('sw.js');
-    await navigator.serviceWorker.ready;
-    const kp = await api('GET', '/api/push/vapid');
-    if (kp.error) return msg('msg-notif', kp.error, false);
-    let sub = await reg.pushManager.getSubscription();
-    if (!sub) sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: b64urlToBytes(kp.publicKey) });
-    const raw = sub.toJSON();
-    const j = await api('POST', '/api/push/subscribe', { subscription: raw });
-    if (j.error) {
-      msg('msg-notif', j.error, false);
-      try { await sub.unsubscribe(); } catch (e) {}
-      return;
-    }
-    localStorage.setItem('pushEndpoint', raw.endpoint);
-    msg('msg-notif', 'Notifications enabled on this device ✓ — a test ' +
-      'notification is on its way.', true);
-    refreshPushState();
-  } catch (e) {
-    msg('msg-notif', 'Could not enable notifications: ' + e, false);
-  }
-});
-
-$('push-disable').addEventListener('click', async () => {
-  try {
-    const reg = await navigator.serviceWorker.getRegistration();
-    const sub = reg ? await reg.pushManager.getSubscription() : null;
-    if (sub) await sub.unsubscribe();
-  } catch (e) {}
-  const ep = localStorage.getItem('pushEndpoint');
-  if (ep) await api('POST', '/api/push/unsubscribe', { endpoint: ep });
-  localStorage.removeItem('pushEndpoint');
-  msg('msg-notif', 'Notifications turned off on this device.', true);
-  refreshPushState();
-});
-
-$('push-test').addEventListener('click', async () => {
-  const j = await api('POST', '/api/push/test', {});
-  msg('msg-notif',
-    j.error || 'Test notification sent ✓ — check your notifications.',
-    !j.error);
-});
 
 // native app test / settings (v2.12.4, via the EFTNative bridge)
 $('native-test').addEventListener('click', () => {

@@ -1,9 +1,21 @@
 #!/usr/bin/env python3
 """
-Emergency Food Storage Tracker — Web UI server (v2.12.7)
+Emergency Food Storage Tracker — Web UI server (v2.12.8)
 =====================================================
 Zero-dependency web server (Python stdlib only).
 
+v2.12.8:
+- Notifications tab cleaned up: the browser-push buttons ("Enable
+   notifications on this device", "Disable on this device", "Send
+   test notification") never worked inside the Android app (the
+   WebView has no push service) — removed. The tab now describes the
+   app's real behaviour (background check ~every 30 minutes plus one
+   right after opening) and keeps only the buttons that work:
+   "Test native notification" and "Open notification settings".
+- About tab: when the installed app is the latest version, the
+   download button is hidden entirely (nothing to download), and the
+   "Download this update…" and "The APK installs over…" explanation
+   texts are gone.
 v2.12.7:
 - Android app 2.12.6: a background check now also runs IMMEDIATELY
    every time the app is opened (new EFTNative.pollNow() called by
@@ -1583,7 +1595,7 @@ class Handler(BaseHTTPRequestHandler):
                     "oidc_enabled": oidc_enabled(),
                     "password_login": password_login_enabled(),
                     "oidc_name": get_config()["oidc"].get("name") or "SSO",
-                    "version": "2.12.7",
+                    "version": "2.12.8",
                     "user": ({**user_public(user),
                               "api_key": user.get("api_key", ""),
                               "visible_households": user_households(user) if not is_global_admin(user)
@@ -2283,7 +2295,7 @@ def main():
     # v2.11: background web-push checker (daemon)
     threading.Thread(target=push_loop, daemon=True).start()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Food storage tracker v2.12.7: http://0.0.0.0:{PORT} "
+    print(f"Food storage tracker v2.12.8: http://0.0.0.0:{PORT} "
           f"(data: {DATA_DIR}, config: {CONFIG_DIR})")
     server.serve_forever()
 
