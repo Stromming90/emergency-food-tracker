@@ -85,31 +85,6 @@ OIDC can also be configured in the settings UI (⚙️) — the UI settings are 
 2. Add the compose above via **Apps → Discover → Install via Compose** (or run it in Dockge: **+ Compose** → paste → Deploy)
 3. Open `http://<truenas-ip>:4500`
 
-## The web UI
-
-The app is organised into two main tabs:
-
-- **🏠 Household**
-- *Record a purchase*
-- *Inventory*
-
-- **📋 Products**
-- *Add a product*
-- *Product list*
-
-- **Types & Categories**
-
-- **Information**
-
-- **⚙️ Settings**
-- *General*
-- *Users*
-- *Households*
-- *Authentication* (global admin)
-- *Notifications*
-- *API Key*
-- *About*
-
 ## Roles
 
 - **Global admin** — the general admin role for the application with access to do and see everything.
