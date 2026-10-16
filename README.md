@@ -10,7 +10,7 @@ Fully self-contained: the web server uses **only the Python standard library** �
 ## Features
 
 - 📋 **Global product list** — the list is shared by all households. 
-- 🏷 **Barcode reference lists** (v2.8) — the tracker ships with a bundled list of Swedish emergency-food products. Additional lists can be added in the future.
+- 🏷 **Barcode reference lists** — the tracker ships with a bundled list of Swedish emergency-food products. Additional lists can be added in the future.
 - 🏠 **Households** — separate inventories per household; users can belong to several and switch between them.
 - 🌙 **Dark mode** — for your comfort.
 - 🔑 **OIDC / SSO** — login via Keycloak, Authentik or Authelia (or any OIDC provider).
