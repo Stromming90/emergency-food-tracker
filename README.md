@@ -2,55 +2,23 @@
 
 > **Disclaimer:** this repository is entirely *vibe-coded* — designed, written and maintained through conversations with [Mistral AI](https://mistral.ai), not hand-written code.
 
-Track your emergency food storage: keep a permanent product list (with
-manufacturer), record purchases with best-before dates, and see alerts at
-**6 months**, **3 months** and **1 month** before each item expires.
+Track your emergency food storage: keep a permanent product list, record purchases with best-before dates, and see alerts at
+different intervals before each item expires.
 
-Fully self-contained: the web server uses **only the Python standard
-library** — no dependencies to audit or update. Runs anywhere Docker runs,
-including TrueNAS.
+Fully self-contained: the web server uses **only the Python standard library** — no dependencies to audit or update. Runs anywhere Docker runs, including TrueNAS.
 
 ## Features
 
-- 📋 **Global product list** — the list is shared by all households. Each
-  product has a type, a category, a manufacturer and a size (g/ml).
-- 🏷 **Barcode reference list with 1 747 Swedish defaults** (v2.8) — the
-  tracker ships with a bundled list of Swedish emergency-food products
-  (pasta, rice, canned fish, oils, honey, crispbread, coffee …) seeded on
-  first start. Scan a product and it resolves instantly; global admins
-  can map more barcodes in the Barcodes tab.
-- 📷 **Two scan workflows (Android app)** — the top-bar scan pre-fills the
-  *Record a purchase* form (and maps unknown barcodes for admins), while
-  the Inventory section's own **Scan** button (v2.8) adds scanned items
-  **straight into the inventory** with an arbitrary quantity — no need to
-  scan every single item.
-- 🗂️ **Curated emergency-food categories** — the Products tab is built
-  around nine types (dry staples & carbohydrates, canned & jarred ready
-  foods, protein, fats & cooking, extras & sweeteners, beverages, instant
-  meals, snacks, supplements), each with typical storage and shelf-life
-  guidance and suggested sub-categories.
-- ⏰ **Expiry alerts** — colour-coded badges: Fine · Less than 6 months ·
-  Less than 3 months · Less than 1 month · Expired. The badges double as
-  filters: click one to show only items in that state.
-- 🏠 **Households** — separate inventories per household; users can belong
-  to several and switch between them.
-- 👤 **Roles** — global admins can do and see everything; household admins
-  can edit the product list, migrate inventory and manage the users of the
-  households they administer.
-- 🌙 **Dark mode** — for your comfort
-- 🔑 **OIDC / SSO** — login via Keycloak, Authentik or Authelia (or any
-  OIDC provider), optional auto-provisioning of unknown users,
-  admin-by-email whitelist
-- 📊 **gethomepage widget** — JSON API with a personal API key showing
-  expiry counts, per household or across all households
-- 💻 **CLI** — same data as the web app, handy for cron/scripts
+- 📋 **Global product list** — the list is shared by all households. 
+- 🏷 **Barcode reference lists** (v2.8) — the tracker ships with a bundled list of Swedish emergency-food products. Additional lists can be added in the future.
+- 🏠 **Households** — separate inventories per household; users can belong to several and switch between them.
+- 🌙 **Dark mode** — for your comfort.
+- 🔑 **OIDC / SSO** — login via Keycloak, Authentik or Authelia (or any OIDC provider).
+- 📊 **gethomepage widget** — JSON API with a personal API key showing expiry counts, per household or across all households.
 
 ## Run with Docker
 
-The project publishes a prebuilt image to GitHub Container Registry —
-every push to `main` triggers a GitHub Actions build automatically
-(see `.github/workflows/docker-publish.yml`). The image is tagged `latest`
-and with the current release version (e.g. `v2.8.0`).
+The project publishes a prebuilt image to GitHub Container Registry — every push to `main` triggers a GitHub Actions build automatically (see `.github/workflows/docker-publish.yml`). The image is tagged `latest` and with the current release version (e.g. `v2.8.0`).
 
 ```yaml
 services:
@@ -67,17 +35,7 @@ services:
       - /mnt/apps/emergency-food-tracker/data:/data
 ```
 
-Adjust the volume paths to your host. `docker compose up -d`, then open
-`http://<host>:4500`.
-
-In Dockge: open the stack → **Pull images** (or edit → **Deploy**) to
-update. Your data in `/data` and `/config` is untouched.
-
-> The GHCR package must be **public** for the host to pull it without
-> logging in. After the first successful Actions run, go to your GitHub
-> profile → **Packages** → `emergency-food-tracker` → **Package settings**
-> → **Change visibility** → Public. (Alternatively `docker login ghcr.io`
-> with a GitHub token on the host for private packages.)
+Adjust the volume paths to your host. `docker compose up -d`, then open `http://<host>:4500`.
 
 If you prefer building from source instead of the registry image, replace
 `image:` with:
@@ -91,33 +49,22 @@ If you prefer building from source instead of the registry image, replace
 
 ### Getting started
 
-**First visit:** you're asked to create the **global admin account** and
-your **first household** — name it something like "home". After that, the
-login screen has a username/password form (and an SSO button once OIDC is
-configured). The bundled Swedish barcode defaults are seeded on first
-start; they appear in the Products tab and the Barcodes tab (global admin).
+**First visit:** you're asked to create the **global admin account** and your **first household** — name it something like "home". 
+After that, the login screen has a username/password form (and an SSO button once OIDC is configured). 
 
-Other users are created in Settings → Users (by a global admin, or by a
-household admin for their own households). Any user can create additional
-households in Settings → Households — the creator automatically becomes
-the household admin of the new household.
+The bundled Swedish barcode defaults are seeded on first start; they appear in the Products tab and the Barcodes tab (global admin).
+
+Other users are created in Settings → Users (by a global admin, or by a household admin for their own households). 
+Any user can create additional households in Settings → Households — the creator automatically becomes the household admin of the new household.
 
 ### Volumes
 
 | Mount | Contents |
 |---|---|
-| `/data` | `products.csv` (global product list), `households/<name>/inventory.csv` |
+| `/data` | `products.csv` (global product list), `households/<name>/inventory.csv` (holds the household inventory |
 | `/config` | `users.json` (accounts, roles, API keys), `config.json` (OIDC settings, barcode mappings) |
 
-Your data lives in plain CSV/JSON files — a backup is just a copy of the
-folder. TrueNAS snapshot tasks on the data dataset work great.
-
-> **Migration:** upgrading from an older version is automatic on first
-> start — the flat pre-household layout moves into `households/default/`,
-> v2.0 per-household product lists are merged into the global
-> `products.csv`, old user flags are converted to the new roles, and (v2.8)
-> the bundled Swedish barcode defaults are merged in without touching your
-> existing products or mappings.
+Your data lives in plain CSV/JSON files — a backup is just a copy of the folder. TrueNAS snapshot tasks on the data dataset work great.
 
 ### Environment variables
 
@@ -130,93 +77,44 @@ folder. TrueNAS snapshot tasks on the data dataset work great.
 | `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | — | OIDC client credentials |
 | `OIDC_ADMIN_EMAILS` | — | Comma-separated emails that become global admin on SSO login |
 
-OIDC can also be configured in the settings UI (⚙️) — the UI settings are
-stored in `/config` and win over env vars only if set after startup.
+OIDC can also be configured in the settings UI (⚙️) — the UI settings are stored in `/config` and win over env vars only if set after startup.
 
 ### TrueNAS (SCALE)
 
 1. Create datasets, e.g. `apps-data/emergency-food-tracker/{config,data}`
-2. Add the compose above via **Apps → Discover → Install via Compose**
-   (or run it in Dockge: **+ Compose** → paste → Deploy)
+2. Add the compose above via **Apps → Discover → Install via Compose** (or run it in Dockge: **+ Compose** → paste → Deploy)
 3. Open `http://<truenas-ip>:4500`
 
 ## The web UI
 
 The app is organised into two main tabs:
 
-- **🏠 Household** — *Record a purchase* at the top: filter the product
-  picker by **type** (each type in the dropdown shows how many products
-  are available), pick a product, best-before date and quantity; a
-  best-before date is suggested from the type's typical shelf life. Your
-  **Inventory** is below: filter by text, click a coloured status badge
-  (Fine · Less than 6 months · Less than 3 months · Less than 1 month ·
-  Expired, or All) to filter by state, and click any column header to
-  sort. In the Android app there's also a **📷 Scan** button (v2.8):
-  scan an item, set the quantity you're adding and confirm — it lands in
-  the inventory directly. Quantities are changed deliberately via a ✎
-  button — no accidental edits. To remove an item, use its ✕ button.
-- **📋 Products** — add products with type, category, product name,
-  manufacturer and size (g/ml); category suggestions come from the chosen
-  type. The product table (filter, sort, edit/remove for admins) shows
-  Type, Category and Size. Removing a product never deletes existing
-  inventory items.
+- **🏠 Household**
+- *Record a purchase*
+- *Inventory*
 
-Settings (⚙️) are organised in tabs: General (overview), Users,
-Households, Authentication (global admin) and API Key.
+- **📋 Products**
+- *Add a product*
+- *Product list*
 
-### Product types
+- **Types & Categories**
 
-Products are organised into nine curated types, each with suggested
-categories:
+- **Information**
 
-| Type | Typical storage | Shelf life |
-|---|---|---|
-| Dry staples & carbohydrates | cool & dry | 1–3 years |
-| Canned & jarred ready foods | pantry | 1–4 years |
-| Protein | pantry | 6–24 months |
-| Fats & cooking | cool & dry | 6–18 months |
-| Extras & sweeteners | pantry | 2–5 years |
-| Beverages | cool & dry | 1–3 years |
-| Instant meals (just add water) | pantry | 1–3 years |
-| Snacks | cool & dry | 6–18 months |
-| Supplements | cool & dry | 1–3 years |
-
-The type's shelf-life range is used to suggest a best-before date when
-recording a purchase.
-
-### Barcodes (Android app)
-
-Scanning is available in the Android app (the web app detects the
-`EFT-Android` user-agent token of the WebView wrapper and shows the scan
-buttons):
-
-- **Top-bar 📷 scan** — looks the barcode up in the mapping table: a known
-  barcode pre-fills the *Record a purchase* form; an unknown one opens
-  the Barcodes tab for a global admin to map it to a product.
-- **Inventory 📷 scan** (v2.8) — a separate scanner in the Household →
-  Inventory section: scan an item, enter how many you're adding and the
-  best-before date, and it's added to the inventory directly. "Scan
-  another" lets you stock-take rapidly. This workflow never jumps to the
-  Barcodes tab or the purchase form.
-
-The tracker ships with **1 747 default barcode mappings** for Swedish
-emergency-food products (`data/barcode-defaults.json`), seeded on first
-start. Global admins manage mappings in the **🏷 Barcodes** tab; deletions
-stick (the seeding runs once per version).
+- **⚙️ Settings**
+- *General*
+- *Users*
+- *Households*
+- *Authentication* (global admin)
+- *Notifications*
+- *API Key*
+- *About*
 
 ## Roles
 
-- **Global admin** — the general admin role for the application with
-  access to do and see everything: all households and inventories, users,
-  households, product list, OIDC settings.
-- **Household admin** — can edit the product list, migrate inventory
-  between households and manage users of the households they administer:
-  create accounts in those households, reset passwords, and grant or
-  revoke household-admin rights. Household admins can make other users
-  household admins of their households.
-- **User** — records purchases and manages the inventory of their own
-  households; can create new households (becoming that household's
-  admin) and has a personal API key.
+- **Global admin** — the general admin role for the application with access to do and see everything.
+- **Household admin** — can edit the product list, migrate inventory between households and manage users of the households.
+- **User** — records purchases and manages the inventory of their own households; can create new households (becoming that household's admin) and has a personal API key.
 
 ## gethomepage widget
 
@@ -311,15 +209,9 @@ Global admins see all households.
         token_endpoint_auth_method: client_secret_basic
 ```
 
-2. In Settings → Authentication, set the issuer to your Authelia
-   instance's OIDC issuer (e.g. `https://auth.example`), plus the client
-   ID and secret
+2. In Settings → Authentication, set the issuer to your Authelia instance's OIDC issuer (e.g. `https://auth.example`), plus the client ID and secret
 
-Endpoints are discovered automatically from the issuer's
-`/.well-known/openid-configuration` for all providers. With
-**auto-create** enabled (default), unknown SSO users get a normal account
-on first login; list their emails in *Global admin emails* to grant the
-global admin role.
+Endpoints are discovered automatically from the issuer's `/.well-known/openid-configuration` for all providers. With **auto-create** enabled (default), unknown SSO users get a normal account on first login; list their emails in *Global admin emails* to grant the global admin role.
 
 ## Data layout
 
