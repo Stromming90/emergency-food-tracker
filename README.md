@@ -1,6 +1,7 @@
 # Emergency Food Storage Tracker
 
 > **Disclaimer:** this repository is entirely *vibe-coded* — designed, written and maintained through conversations with [Mistral AI](https://mistral.ai), not hand-written code.
+I made this program for my own personal use and just made it public in case anyone else thought it might be useful.
 
 Track your emergency food storage: keep a permanent product list, record purchases with best-before dates, and see alerts at
 different intervals before each item expires.
